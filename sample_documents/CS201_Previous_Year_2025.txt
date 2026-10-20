@@ -1,0 +1,8 @@
+END-SEMESTER EXAMINATION 2025
+Course: CS201 Data Structures and Algorithms
+
+Q1. Define a linear data structure and discuss the difference between stack and queue ADTs. (5 Marks)
+Q2. Write an algorithm to reverse a singly linked list iteratively and explain its boundary edge cases. (10 Marks)
+Q3. Explain Dijkstra's shortest path algorithm with a weighted directed graph example and state its time complexity. (10 Marks)
+Q4. Find the Longest Common Subsequence between strings 'BDCABA' and 'ABCBDAB' using dynamic programming. (10 Marks)
+Q5. What is an array? Explain row-major and column-major address calculation. (5 Marks)

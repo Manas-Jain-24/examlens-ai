@@ -1,0 +1,78 @@
+{
+  "paper_title": "End-Semester Examination — Fall 2026",
+  "course_code": "CS201",
+  "total_marks": 100.0,
+  "duration_minutes": 180,
+  "questions": [
+    {
+      "question_id": "Q1",
+      "section": "Part A",
+      "question_text": "Define a singly linked list and list its advantages and disadvantages over static arrays.",
+      "marks": 5.0,
+      "question_type": "Theoretical"
+    },
+    {
+      "question_id": "Q2",
+      "section": "Part A",
+      "question_text": "Explain the step-by-step procedure to insert a node at the beginning and end of a doubly linked list with diagrams.",
+      "marks": 10.0,
+      "question_type": "Descriptive"
+    },
+    {
+      "question_id": "Q3",
+      "section": "Part B",
+      "question_text": "Implement a stack using a singly linked list and explain the time complexity of push and pop operations.",
+      "marks": 10.0,
+      "question_type": "Coding/Implementation"
+    },
+    {
+      "question_id": "Q4",
+      "section": "Part B",
+      "question_text": "Write an algorithm to reverse a singly linked list iteratively and explain its boundary edge cases.",
+      "marks": 10.0,
+      "question_type": "Algorithmic"
+    },
+    {
+      "question_id": "Q5",
+      "section": "Part B",
+      "question_text": "Convert the following infix expression to postfix notation using an explicit stack trace: (A + B) * (C - D) / E.",
+      "marks": 10.0,
+      "question_type": "Problem-Solving"
+    },
+    {
+      "question_id": "Q6",
+      "section": "Part B",
+      "question_text": "Explain circular queue implementation using arrays and discuss why it prevents memory wastage compared to linear queue.",
+      "marks": 10.0,
+      "question_type": "Descriptive"
+    },
+    {
+      "question_id": "Q7",
+      "section": "Part B",
+      "question_text": "What is an AVL tree? Explain LL and RR rotations with an illustrative example.",
+      "marks": 10.0,
+      "question_type": "Descriptive"
+    },
+    {
+      "question_id": "Q8",
+      "section": "Part C",
+      "question_text": "Solve the 0/1 knapsack problem using dynamic programming for knapsack capacity W = 8 and items with weights [2, 3, 4, 5] and values [3, 4, 5, 8]. Show the DP table.",
+      "marks": 15.0,
+      "question_type": "Numerical/DP"
+    },
+    {
+      "question_id": "Q9",
+      "section": "Part C",
+      "question_text": "Compare dynamic programming with the divide-and-conquer strategy. Analyze why memoization avoids exponential time in overlapping subproblems.",
+      "marks": 10.0,
+      "question_type": "Analytical"
+    },
+    {
+      "question_id": "Q10",
+      "section": "Part C",
+      "question_text": "Implement a Red-Black Tree insertion algorithm and explain color-flip properties and black-height invariance.",
+      "marks": 10.0,
+      "question_type": "Implementation"
+    }
+  ]
+}

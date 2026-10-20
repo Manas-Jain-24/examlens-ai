@@ -1,0 +1,32 @@
+[
+  {
+    "paper_year": "Final Exam 2025",
+    "question_id": "Q2",
+    "question_text": "Define a linear data structure and discuss the difference between stack and queue ADTs.",
+    "marks": 5.0
+  },
+  {
+    "paper_year": "Final Exam 2025",
+    "question_id": "Q4",
+    "question_text": "Write an algorithm to reverse a singly linked list iteratively and explain its boundary edge cases.",
+    "marks": 10.0
+  },
+  {
+    "paper_year": "Final Exam 2025",
+    "question_id": "Q7",
+    "question_text": "Explain Dijkstra's shortest path algorithm with a weighted directed graph example and state its time complexity.",
+    "marks": 10.0
+  },
+  {
+    "paper_year": "Final Exam 2025",
+    "question_id": "Q9",
+    "question_text": "Find the Longest Common Subsequence between strings 'BDCABA' and 'ABCBDAB' using dynamic programming.",
+    "marks": 10.0
+  },
+  {
+    "paper_year": "Mid-Semester 2025",
+    "question_id": "Q1",
+    "question_text": "What is an array? Explain row-major and column-major address calculation.",
+    "marks": 5.0
+  }
+]

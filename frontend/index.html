@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExamLens AI — Assessment Quality & Syllabus-Alignment Auditor</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome & Chart.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <!-- Ambient background glow elements -->
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+  <div class="glow-orb orb-3"></div>
+
+  <!-- Header Navigation -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="brand-icon">
+        <i class="fa-solid fa-graduation-cap"></i>
+      </div>
+      <div class="brand-text">
+        <h1>ExamLens <span class="ai-badge">AI</span></h1>
+        <p>Examination Quality & Syllabus-Alignment Auditor</p>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <button id="btn-load-demo" class="btn btn-secondary">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Load CS201 Demo
+      </button>
+      <button id="btn-open-upload" class="btn btn-primary">
+        <i class="fa-solid fa-file-arrow-up"></i> Audit New Paper
+      </button>
+      <button id="btn-export-pdf" class="btn btn-outline" style="display: none;">
+        <i class="fa-solid fa-file-pdf"></i> Export Audit PDF
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+    
+    <!-- Upload Modal / Drawer -->
+    <section id="upload-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div>
+            <h2><i class="fa-solid fa-cloud-arrow-up"></i> Audit Question Paper</h2>
+            <p>Upload your course syllabus and draft question paper for automated assessment quality audit.</p>
+          </div>
+          <button id="btn-close-modal" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <form id="audit-form" class="modal-body">
+          <div class="input-grid">
+            <!-- Syllabus Upload -->
+            <div class="upload-box" id="dropzone-syl">
+              <div class="upload-icon"><i class="fa-solid fa-book-bookmark"></i></div>
+              <h3>1. Course Syllabus</h3>
+              <p>Upload PDF or TXT with Units & Topics</p>
+              <input type="file" id="file-syllabus" accept=".pdf,.txt" class="file-input">
+              <label for="file-syllabus" class="btn-choose">Choose File</label>
+              <span class="file-name" id="name-syllabus">No file selected</span>
+              <div class="divider-text">OR PASTE TEXT</div>
+              <textarea id="text-syllabus" placeholder="Unit 1: Arrays...\nUnit 2: Trees..."></textarea>
+            </div>
+
+            <!-- Question Paper Upload -->
+            <div class="upload-box" id="dropzone-paper">
+              <div class="upload-icon"><i class="fa-solid fa-file-lines"></i></div>
+              <h3>2. Draft Question Paper</h3>
+              <p>Upload PDF or TXT with questions & marks</p>
+              <input type="file" id="file-paper" accept=".pdf,.txt" class="file-input">
+              <label for="file-paper" class="btn-choose">Choose File</label>
+              <span class="file-name" id="name-paper">No file selected</span>
+              <div class="divider-text">OR PASTE TEXT</div>
+              <textarea id="text-paper" placeholder="Q1. Define linked list (5 Marks)\nQ2. ..."></textarea>
+            </div>
+
+            <!-- Previous Year Papers (Optional) -->
+            <div class="upload-box" id="dropzone-pyq">
+              <div class="upload-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+              <h3>3. Previous-Year Papers <span class="badge-optional">Optional</span></h3>
+              <p>Check for repeated & duplicate questions</p>
+              <input type="file" id="file-pyq" accept=".pdf,.txt" class="file-input">
+              <label for="file-pyq" class="btn-choose">Choose File</label>
+              <span class="file-name" id="name-pyq">No file selected</span>
+              <div class="divider-text">OR PASTE TEXT</div>
+              <textarea id="text-pyq" placeholder="Q1. Explain BFS traversal (10 Marks)"></textarea>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" id="btn-cancel-upload" class="btn btn-secondary">Cancel</button>
+            <button type="submit" id="btn-submit-audit" class="btn btn-primary">
+              <i class="fa-solid fa-magnifying-glass-chart"></i> Run Examination Audit
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="loading-overlay hidden">
+      <div class="spinner"></div>
+      <h3>Auditing Assessment Quality...</h3>
+      <p id="loading-step">Mapping questions to syllabus topics & calculating Bloom's taxonomy balance...</p>
+    </div>
+
+    <!-- Dashboard Content -->
+    <div id="dashboard-content" class="dashboard-grid">
+
+      <!-- Course & Paper Header Card -->
+      <section class="card header-card">
+        <div class="header-left">
+          <div class="course-badge" id="disp-course-code">CS201</div>
+          <div>
+            <h2 id="disp-course-name">Data Structures and Algorithms</h2>
+            <p id="disp-paper-title"><i class="fa-regular fa-file-lines"></i> End-Semester Examination — Fall 2026</p>
+          </div>
+        </div>
+
+        <div class="header-stats">
+          <div class="stat-pill">
+            <span class="label">Total Marks</span>
+            <span class="val" id="disp-total-marks">100 M</span>
+          </div>
+          <div class="stat-pill">
+            <span class="label">Questions</span>
+            <span class="val" id="disp-total-questions">10 Items</span>
+          </div>
+          <div class="stat-pill">
+            <span class="label">Syllabus Coverage</span>
+            <span class="val" id="disp-coverage-ratio">4 / 5 Units</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Executive Score & Metrics Row -->
+      <section class="metrics-row">
+        <!-- Quality Score Card -->
+        <div class="card score-card">
+          <div class="card-title">
+            <span><i class="fa-solid fa-shield-halved"></i> Exam Quality Score</span>
+            <span class="info-tag" title="Calculated based on syllabus coverage, learning outcomes, mark weightage, and Bloom's balance">Explainable Formula</span>
+          </div>
+
+          <div class="score-display">
+            <div class="score-dial">
+              <svg viewBox="0 0 100 100" class="circular-chart">
+                <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                <path id="score-circle-progress" class="circle" stroke-dasharray="81.5, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              </svg>
+              <div class="dial-center">
+                <span class="score-number" id="disp-overall-score">81.5</span>
+                <span class="score-max">/ 100</span>
+              </div>
+            </div>
+
+            <div class="score-summary">
+              <div class="grade-tag" id="disp-grade">A (High Quality)</div>
+              <p id="disp-verdict-summary">Strong assessment quality with minor adjustments recommended in marks distribution or Bloom's balance.</p>
+            </div>
+          </div>
+
+          <!-- Score Breakdown Progress Bars -->
+          <div class="score-breakdown-list" id="score-breakdown-container">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Bloom's Cognitive Balance Card -->
+        <div class="card blooms-card">
+          <div class="card-title">
+            <span><i class="fa-solid fa-brain"></i> Bloom's Taxonomy Cognitive Distribution</span>
+            <span class="legend-note">Target: Balanced Application</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="bloomsRadarChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Marks Distribution Comparison Card -->
+        <div class="card marks-card">
+          <div class="card-title">
+            <span><i class="fa-solid fa-chart-column"></i> Unit Marks Distribution</span>
+            <span class="legend-note">Actual % vs Expected %</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="marksBarChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Unit-wise Coverage Matrix -->
+      <section class="card coverage-matrix-card">
+        <div class="card-title">
+          <span><i class="fa-solid fa-layer-group"></i> Syllabus Unit-Wise Assessment Coverage</span>
+          <div class="status-legend">
+            <span class="badge badge-success"><i class="fa-solid fa-check"></i> Well Covered</span>
+            <span class="badge badge-warning"><i class="fa-solid fa-arrow-trend-up"></i> Overrepresented</span>
+            <span class="badge badge-danger"><i class="fa-solid fa-triangle-exclamation"></i> Not Assessed</span>
+            <span class="badge badge-info"><i class="fa-solid fa-arrow-trend-down"></i> Underrepresented</span>
+          </div>
+        </div>
+
+        <div class="unit-grid" id="unit-coverage-grid">
+          <!-- Dynamically populated unit cards -->
+        </div>
+      </section>
+
+      <!-- Actionable Audit Findings & Moderation Directives -->
+      <section class="card findings-card">
+        <div class="card-title">
+          <div class="findings-heading">
+            <span><i class="fa-solid fa-triangle-exclamation"></i> Audit Findings & Moderation Directives</span>
+            <span class="findings-count-badge" id="disp-findings-count">4 Alerts</span>
+          </div>
+
+          <div class="filter-tabs">
+            <button class="filter-btn active" data-filter="all">All Alerts</button>
+            <button class="filter-btn" data-filter="Coverage">Coverage Gaps</button>
+            <button class="filter-btn" data-filter="Weightage">Weightage</button>
+            <button class="filter-btn" data-filter="Repetition">Repetitions</button>
+            <button class="filter-btn" data-filter="Out-of-Syllabus">Out-of-Syllabus</button>
+            <button class="filter-btn" data-filter="Blooms">Bloom's</button>
+          </div>
+        </div>
+
+        <div class="findings-list" id="findings-list-container">
+          <!-- Dynamically populated findings -->
+        </div>
+      </section>
+
+      <!-- Question Mapping & Faculty Override Review Table -->
+      <section class="card questions-table-card">
+        <div class="card-title-table">
+          <div>
+            <h2><i class="fa-solid fa-table-list"></i> Human-in-the-Loop Question Review & Mapping</h2>
+            <p>Faculty can verify, override assigned units, or change Bloom's cognitive level. Scores recalculate in real time.</p>
+          </div>
+
+          <div class="table-actions">
+            <button id="btn-recalculate" class="btn btn-secondary btn-sm">
+              <i class="fa-solid fa-arrows-rotate"></i> Recalculate Quality Score
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">Q ID</th>
+                <th style="width: 80px;">Section</th>
+                <th>Question Statement</th>
+                <th style="width: 70px;">Marks</th>
+                <th style="width: 170px;">Mapped Unit</th>
+                <th style="width: 140px;">Bloom's Level</th>
+                <th style="width: 120px;">Confidence</th>
+                <th style="width: 130px;">Alerts</th>
+              </tr>
+            </thead>
+            <tbody id="questions-table-body">
+              <!-- Dynamically populated question rows -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <p>ExamLens AI — Assessment Quality Assurance & Curriculum Alignment Platform</p>
+    <p class="footnote">Designed for Examination Cells, Faculty Moderation Committees, and Institutional Accreditation (NBA / ABET / NAAC)</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

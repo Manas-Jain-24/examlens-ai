@@ -1,0 +1,50 @@
+Course Code: CS201
+Course Title: Data Structures and Algorithms
+Department: Computer Science and Engineering
+Semester: 3
+Credits: 4
+
+Unit 1: Arrays and Linked Lists
+- Array operations and memory representation
+- Singly linked lists operations
+- Doubly linked lists
+- Circular linked lists
+- Stack implementation using linked list
+CO1: Implement linear data structures such as linked lists and stacks
+CO2: Analyze time complexity of basic data structure operations
+
+Unit 2: Stacks and Queues
+- Stack ADT and applications
+- Infix to Postfix expression conversion
+- Queue ADT and Circular Queue
+- Double-ended Queue (Deque)
+- Priority Queue basics
+CO3: Apply stacks and queues to solve parsing and scheduling problems
+CO4: Differentiate between linear and circular queue mechanisms
+
+Unit 3: Trees and Binary Search Trees
+- Binary Tree traversals (Inorder, Preorder, Postorder)
+- Binary Search Trees (BST) insertion and deletion
+- AVL Trees and balancing rotations
+- Binary Heap properties
+- Heap Sort
+CO5: Design and implement hierarchical data structures
+CO6: Evaluate self-balancing tree search performance
+
+Unit 4: Graph Algorithms
+- Graph representations: Adjacency Matrix and Adjacency List
+- Breadth-First Search (BFS) traversal
+- Depth-First Search (DFS) traversal
+- Dijkstra's shortest path algorithm
+- Minimum Spanning Trees: Prim's and Kruskal's algorithms
+CO7: Analyze graph traversal techniques and connectivity
+CO8: Formulate shortest-path and minimum spanning tree solutions
+
+Unit 5: Dynamic Programming and Optimization
+- Principles of Dynamic Programming vs Divide & Conquer
+- 0/1 Knapsack Problem formulation and solution
+- Longest Common Subsequence (LCS)
+- Matrix Chain Multiplication
+- Optimal substructure and overlapping subproblems
+CO9: Apply dynamic programming methods to optimization problems
+CO10: Analyze asymptotic recurrence relations and optimal solutions

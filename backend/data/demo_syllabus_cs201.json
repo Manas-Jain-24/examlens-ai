@@ -1,0 +1,89 @@
+{
+  "course_name": "Data Structures and Algorithms",
+  "course_code": "CS201",
+  "department": "Computer Science & Engineering",
+  "semester": 3,
+  "total_credits": 4,
+  "units": [
+    {
+      "unit_number": 1,
+      "title": "Arrays and Linked Lists",
+      "topics": [
+        "Array operations and memory representation",
+        "Singly linked lists operations",
+        "Doubly linked lists",
+        "Circular linked lists",
+        "Stack implementation using linked list"
+      ],
+      "learning_outcomes": [
+        "Implement linear data structures such as linked lists and stacks",
+        "Analyze time complexity of basic data structure operations"
+      ],
+      "recommended_weightage_percent": 20.0
+    },
+    {
+      "unit_number": 2,
+      "title": "Stacks and Queues",
+      "topics": [
+        "Stack ADT and applications",
+        "Infix to Postfix expression conversion",
+        "Queue ADT and Circular Queue",
+        "Double-ended Queue (Deque)",
+        "Priority Queue basics"
+      ],
+      "learning_outcomes": [
+        "Apply stacks and queues to solve parsing and scheduling problems",
+        "Differentiate between linear and circular queue mechanisms"
+      ],
+      "recommended_weightage_percent": 20.0
+    },
+    {
+      "unit_number": 3,
+      "title": "Trees and Binary Search Trees",
+      "topics": [
+        "Binary Tree traversals (Inorder, Preorder, Postorder)",
+        "Binary Search Trees (BST) insertion and deletion",
+        "AVL Trees and balancing rotations",
+        "Binary Heap properties",
+        "Heap Sort"
+      ],
+      "learning_outcomes": [
+        "Design and implement hierarchical data structures",
+        "Evaluate self-balancing tree search performance"
+      ],
+      "recommended_weightage_percent": 20.0
+    },
+    {
+      "unit_number": 4,
+      "title": "Graph Algorithms",
+      "topics": [
+        "Graph representations: Adjacency Matrix and Adjacency List",
+        "Breadth-First Search (BFS) traversal",
+        "Depth-First Search (DFS) traversal",
+        "Dijkstra's shortest path algorithm",
+        "Minimum Spanning Trees: Prim's and Kruskal's algorithms"
+      ],
+      "learning_outcomes": [
+        "Analyze graph traversal techniques and connectivity",
+        "Formulate shortest-path and minimum spanning tree solutions"
+      ],
+      "recommended_weightage_percent": 20.0
+    },
+    {
+      "unit_number": 5,
+      "title": "Dynamic Programming & Optimization",
+      "topics": [
+        "Principles of Dynamic Programming vs Divide & Conquer",
+        "0/1 Knapsack Problem formulation and solution",
+        "Longest Common Subsequence (LCS)",
+        "Matrix Chain Multiplication",
+        "Optimal substructure and overlapping subproblems"
+      ],
+      "learning_outcomes": [
+        "Apply dynamic programming methods to optimization problems",
+        "Analyze asymptotic recurrence relations and optimal solutions"
+      ],
+      "recommended_weightage_percent": 20.0
+    }
+  ]
+}

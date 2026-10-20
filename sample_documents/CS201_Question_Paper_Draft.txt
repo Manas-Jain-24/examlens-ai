@@ -1,0 +1,25 @@
+DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING
+END-SEMESTER EXAMINATION — FALL 2026
+Course Code: CS201
+Subject: Data Structures and Algorithms
+Max Marks: 100
+Time: 3 Hours
+
+PART A (Answer all questions)
+
+Q1. Define a singly linked list and list its advantages and disadvantages over static arrays. (5 Marks)
+Q2. Explain the step-by-step procedure to insert a node at the beginning and end of a doubly linked list with diagrams. (10 Marks)
+
+PART B (Answer all questions)
+
+Q3. Implement a stack using a singly linked list and explain the time complexity of push and pop operations. (10 Marks)
+Q4. Write an algorithm to reverse a singly linked list iteratively and explain its boundary edge cases. (10 Marks)
+Q5. Convert the following infix expression to postfix notation using an explicit stack trace: (A + B) * (C - D) / E. (10 Marks)
+Q6. Explain circular queue implementation using arrays and discuss why it prevents memory wastage compared to linear queue. (10 Marks)
+Q7. What is an AVL tree? Explain LL and RR rotations with an illustrative example. (10 Marks)
+
+PART C (Answer all questions)
+
+Q8. Solve the 0/1 knapsack problem using dynamic programming for knapsack capacity W = 8 and items with weights [2, 3, 4, 5] and values [3, 4, 5, 8]. Show the DP table. (15 Marks)
+Q9. Compare dynamic programming with the divide-and-conquer strategy. Analyze why memoization avoids exponential time in overlapping subproblems. (10 Marks)
+Q10. Implement a Red-Black Tree insertion algorithm and explain color-flip properties and black-height invariance. (10 Marks)
