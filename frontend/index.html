@@ -52,6 +52,68 @@
 
   <!-- Main Container -->
   <main class="main-container">
+    <section class="card workspace-card">
+      <h2>Review workspace</h2>
+      <p id="workspace-status" role="status">Load a paper to begin.</p>
+      <p id="choice-summary"></p>
+      <div class="workspace-actions">
+        <button id="btn-edit-documents" class="btn btn-secondary">Review documents & rules</button>
+        <label>Audit title <input id="history-title" placeholder="e.g. CS201 final exam"></label>
+        <label>Revision note <input id="history-note" placeholder="What changed?"></label>
+        <button id="btn-save-revision" class="btn btn-primary">Save revision</button>
+        <button id="btn-save-copy" class="btn btn-secondary">Save as new audit</button>
+        <button id="btn-open-history" class="btn btn-secondary">Audit history</button>
+        <button id="btn-open-evaluation" class="btn btn-secondary">Evaluate accuracy</button>
+      </div>
+    </section>
+
+    <section id="review-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="review-heading">
+      <div class="modal-card workspace-modal">
+        <div class="modal-header"><h2 id="review-heading">Review extracted documents & assessment rules</h2><button class="btn-close" data-close="review-modal" aria-label="Close document review">×</button></div>
+        <div class="modal-body">
+          <p>Check the extracted structure before auditing. Changes to source documents trigger a fresh analysis of all questions.</p>
+          <ul id="review-warnings" class="review-warnings"></ul>
+          <details><summary>Original extracted text</summary><pre id="review-source"></pre></details>
+          <div class="editor-grid">
+            <label>Course name <input id="review-course-name"></label><label>Course code <input id="review-course-code"></label>
+            <label>Paper title <input id="review-paper-title"></label>
+          </div>
+          <h3>Syllabus units</h3><p>One topic or learning outcome per line. Unit weights must total 100%.</p>
+          <div id="review-units"></div><button id="btn-add-unit" class="btn btn-secondary" type="button">Add unit</button>
+          <h3>Questions & marks</h3><div id="review-questions"></div><button id="btn-add-question" class="btn btn-secondary" type="button">Add question</button>
+          <h3>Optional questions</h3><p>Each group lists question IDs separated by commas. Groups must not overlap. Choose 1 for OR, or choose N for “attempt any N”. Nested choices need restructuring into disjoint groups.</p>
+          <div id="review-choices"></div><button id="btn-add-choice" class="btn btn-secondary" type="button">Add choice group</button>
+          <h3>Previous-year questions</h3><div id="review-pyqs"></div><button id="btn-add-pyq" class="btn btn-secondary" type="button">Add past question</button>
+          <h3>Score component weights (%)</h3><div id="review-component-weights" class="editor-grid"></div>
+          <h3>Desired Bloom distribution (%)</h3><div id="review-blooms-targets" class="editor-grid"></div>
+          <div class="editor-grid"><label>Medium repetition threshold (0–1)<input id="review-repeat-medium" type="number" min="0" max="1" step="0.01"></label><label>High repetition threshold (0–1)<input id="review-repeat-high" type="number" min="0" max="1" step="0.01"></label></div>
+          <p id="review-error" class="inline-error" role="alert"></p>
+          <button id="btn-run-reviewed" class="btn btn-primary">Confirm corrections & run audit</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="history-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="history-heading">
+      <div class="modal-card workspace-modal"><div class="modal-header"><h2 id="history-heading">Saved audits & revisions</h2><button class="btn-close" data-close="history-modal" aria-label="Close history">×</button></div>
+        <div class="modal-body"><p>Saved on this server. Revision timestamps are displayed in your local time.</p><div id="history-audits"></div><div id="history-revisions"></div>
+          <div class="workspace-actions"><label>Before revision <input id="compare-before" type="number" min="1" value="1"></label><label>After revision <input id="compare-after" type="number" min="1" value="2"></label><button id="btn-compare-revisions" class="btn btn-secondary">Compare revisions</button></div>
+          <div id="history-comparison"></div><p id="history-error" class="inline-error" role="alert"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="evaluation-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="evaluation-heading">
+      <div class="modal-card workspace-modal"><div class="modal-header"><h2 id="evaluation-heading">Evaluation examples & reference labels</h2><button class="btn-close" data-close="evaluation-modal" aria-label="Close evaluation">×</button></div>
+        <div class="modal-body"><p>Draft samples are excluded from reviewed accuracy metrics. Only enter a reviewer’s name after that person has checked the sources and reference labels.</p>
+          <div class="workspace-actions"><select id="evaluation-example" aria-label="Evaluation example"></select><button id="btn-new-example" class="btn btn-secondary">New example</button><button id="btn-run-evaluation" class="btn btn-primary">Evaluate reviewed examples</button><button id="btn-smoke-evaluation" class="btn btn-secondary">Run draft smoke check</button><button id="btn-export-examples" class="btn btn-secondary">Export dataset</button></div>
+          <div id="evaluation-results" role="status"></div>
+          <div class="editor-grid"><label>Example ID<input id="eval-id"></label><label>Reviewer (blank = draft)<input id="eval-reviewer"></label><label>Expected question count<input id="eval-count" type="number" min="1"></label><label>Expected printed marks<input id="eval-marks" type="number" min="0.1" step="0.1"></label></div>
+          <label>Syllabus source<textarea id="eval-syllabus" rows="7"></textarea></label><label>Question paper source<textarea id="eval-paper" rows="7"></textarea></label>
+          <h3>Reference labels</h3><div id="evaluation-labels"></div><button id="btn-add-label" class="btn btn-secondary">Add reference label</button><button id="btn-save-example" class="btn btn-primary">Save example & review attribution</button>
+          <p id="evaluation-error" class="inline-error" role="alert"></p>
+        </div>
+      </div>
+    </section>
     
     <!-- Upload Modal / Drawer -->
     <section id="upload-modal" class="modal-backdrop hidden">
@@ -106,7 +168,7 @@
           <div class="modal-footer">
             <button type="button" id="btn-cancel-upload" class="btn btn-secondary">Cancel</button>
             <button type="submit" id="btn-submit-audit" class="btn btn-primary">
-              <i class="fa-solid fa-magnifying-glass-chart"></i> Run Examination Audit
+              <i class="fa-solid fa-magnifying-glass-chart"></i> Preview & Correct Documents
             </button>
           </div>
         </form>
@@ -135,7 +197,7 @@
 
         <div class="header-stats">
           <div class="stat-pill">
-            <span class="label">Total Marks</span>
+            <span class="label">Expected Attempt Marks</span>
             <span class="val" id="disp-total-marks">100 M</span>
           </div>
           <div class="stat-pill">
@@ -143,7 +205,7 @@
             <span class="val" id="disp-total-questions">10 Items</span>
           </div>
           <div class="stat-pill">
-            <span class="label">Syllabus Coverage</span>
+            <span class="label">Guaranteed Unit Coverage</span>
             <span class="val" id="disp-coverage-ratio">4 / 5 Units</span>
           </div>
         </div>
@@ -250,7 +312,7 @@
         <div class="card-title-table">
           <div>
             <h2><i class="fa-solid fa-table-list"></i> Human-in-the-Loop Question Review & Mapping</h2>
-            <p>Faculty can verify, override assigned units, or change Bloom's cognitive level. Scores recalculate in real time.</p>
+            <p>Inspect mapping evidence, record faculty decisions, and correct units or Bloom levels. Click Recalculate to apply changes.</p>
           </div>
 
           <div class="table-actions">
@@ -428,5 +490,6 @@
   </footer>
 
   <script src="/static/app.js"></script>
+  <script src="/static/workspace.js"></script>
 </body>
 </html>

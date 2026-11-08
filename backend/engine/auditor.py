@@ -3,17 +3,21 @@ from typing import List, Dict, Any, Optional
 from backend.models import (
     Syllabus, QuestionPaper, PreviousYearQuestion,
     AuditReport, AuditFinding, UnitCoverageStat,
-    BloomsDistributionStat, ScoreBreakdown, QuestionItem
+    BloomsDistributionStat, ScoreBreakdown, QuestionItem, AuditRules
 )
+from backend.engine.choices import choice_accounting, expected_outcome_coverage
 from backend.engine.semantic_mapper import SemanticMapper
 from backend.engine.blooms_classifier import classify_blooms_taxonomy, BLOOMS_ORDER
 from backend.engine.similarity_detector import SimilarityDetector
 
 class ExamAuditor:
-    def __init__(self, syllabus: Syllabus, paper: QuestionPaper, pyqs: Optional[List[PreviousYearQuestion]] = None):
+    def __init__(self, syllabus: Syllabus, paper: QuestionPaper, pyqs: Optional[List[PreviousYearQuestion]] = None, rules: Optional[AuditRules] = None):
         self.syllabus = syllabus
         self.paper = paper
         self.pyqs = pyqs or []
+        self.rules = rules or AuditRules()
+        if self.rules.unit_weights and set(self.rules.unit_weights) != {u.unit_number for u in syllabus.units}:
+            raise ValueError('Unit weights must match the syllabus units.')
         self.mapper = SemanticMapper(syllabus)
         self.similarity_detector = SimilarityDetector(self.pyqs)
 
@@ -30,7 +34,8 @@ class ExamAuditor:
                 q.command_verb = verb
 
         # Step 3: Previous Year Repetition Analysis
-        self.paper.questions, rep_findings = self.similarity_detector.check_repetitions(self.paper.questions)
+        self.paper.questions, rep_findings = self.similarity_detector.check_repetitions(
+            self.paper.questions, self.rules.repeat_medium, self.rules.repeat_high)
 
         # Step 4: Calculate Metrics, Coverages, and Findings
         return self._generate_report(rep_findings)
@@ -39,12 +44,16 @@ class ExamAuditor:
         """Recalculates coverage and scores after faculty overrides/edits."""
         self.paper.questions = updated_questions
         # Re-check PYQ similarities
-        self.paper.questions, rep_findings = self.similarity_detector.check_repetitions(self.paper.questions)
+        self.paper.questions, rep_findings = self.similarity_detector.check_repetitions(
+            self.paper.questions, self.rules.repeat_medium, self.rules.repeat_high)
         return self._generate_report(rep_findings)
 
     def _generate_report(self, rep_findings: List[AuditFinding]) -> AuditReport:
         findings: List[AuditFinding] = list(rep_findings)
-        total_exam_marks = sum(q.marks for q in self.paper.questions) or 100.0
+        selection_weights, total_exam_marks, min_marks, max_marks = choice_accounting(self.paper)
+        total_exam_marks = total_exam_marks or 100.0
+        effective_marks = lambda q: q.marks * selection_weights[q.question_id]
+        guaranteed_units = 0
         num_units = len(self.syllabus.units) or 1
         expected_weightage_per_unit = 100.0 / num_units
 
@@ -53,19 +62,17 @@ class ExamAuditor:
         covered_units_count = 0
         weightage_deviations = []
 
-        all_mapped_los = set()
-        for q in self.paper.questions:
-            for lo in q.mapped_outcomes:
-                all_mapped_los.add(lo)
-
-        total_syllabus_los = sum(len(u.learning_outcomes) for u in self.syllabus.units) or 1
+        expected_los, total_syllabus_los = expected_outcome_coverage(self.paper, self.syllabus)
 
         for unit in self.syllabus.units:
             unit_qs = [q for q in self.paper.questions if q.mapped_unit == unit.unit_number]
-            unit_marks = sum(q.marks for q in unit_qs)
+            _, unit_marks, guaranteed, possible = choice_accounting(self.paper, unit.unit_number)
+            if guaranteed > 0:
+                guaranteed_units += 1
             marks_pct = (unit_marks / total_exam_marks) * 100.0 if total_exam_marks > 0 else 0.0
             
-            exp_weight = unit.recommended_weightage_percent or expected_weightage_per_unit
+            exp_weight = self.rules.unit_weights.get(unit.unit_number,
+                unit.recommended_weightage_percent if unit.recommended_weightage_percent is not None else expected_weightage_per_unit)
             weightage_deviations.append(abs(marks_pct - exp_weight))
 
             # Coverage Status Logic
@@ -120,7 +127,11 @@ class ExamAuditor:
                 status = "Well Covered"
                 covered_units_count += 1
 
+            if guaranteed == 0 and possible > 0:
+                status = 'Optional Only'
             unit_stats.append(UnitCoverageStat(
+                guaranteed_marks=guaranteed,
+                possible_marks=possible,
                 unit_number=unit.unit_number,
                 unit_title=unit.title,
                 topics_count=len(unit.topics),
@@ -137,7 +148,7 @@ class ExamAuditor:
             lvl = q.blooms_level or "Understand"
             if lvl not in blooms_map:
                 lvl = "Understand"
-            blooms_map[lvl]["marks"] += q.marks
+            blooms_map[lvl]["marks"] += effective_marks(q)
             blooms_map[lvl]["count"] += 1
 
         blooms_stats: List[BloomsDistributionStat] = []
@@ -160,30 +171,16 @@ class ExamAuditor:
                 question_count=blooms_map[lvl]["count"]
             ))
 
-        if lower_order_pct > 65.0:
+        blooms_distance = sum(
+            abs(blooms_map[level]['marks'] / total_exam_marks * 100 - self.rules.blooms_targets[level])
+            for level in BLOOMS_ORDER) / 2
+        if blooms_distance > 20:
             findings.append(AuditFinding(
-                finding_id="BLM_LOWER_ORDER_HEAVY",
-                category="Blooms",
-                severity="High",
-                title="Excessive Recall / Rote Learning Bias",
-                message=(
-                    f"{round(lower_order_pct, 1)}% of exam marks test Remember/Understand levels. "
-                    f"Only {round(100 - lower_order_pct, 1)}% tests application or higher-order analytical reasoning."
-                ),
-                related_units=[],
-                related_questions=[q.question_id for q in self.paper.questions if q.blooms_level in ["Remember", "Understand"]],
-                recommended_action="Convert some definitions into applied problem-solving or case-based questions."
-            ))
-        elif higher_order_marks < (total_exam_marks * 0.25):
-            findings.append(AuditFinding(
-                finding_id="BLM_HIGHER_ORDER_DEFICIT",
-                category="Blooms",
-                severity="Medium",
-                title="Deficit in Higher-Order Cognitive Testing",
-                message="Less than 25% of marks evaluate Apply, Analyze, or Evaluate cognitive levels.",
-                related_units=[],
-                related_questions=[],
-                recommended_action="Introduce algorithmic analysis or design evaluation problems."
+                finding_id='BLM_TARGET_DEVIATION', category='Blooms',
+                severity='High' if blooms_distance > 40 else 'Medium',
+                title='Cognitive distribution differs from configured targets',
+                message=f'Total variation from the selected Bloom targets is {blooms_distance:.1f} percentage points.',
+                recommended_action='Review the question levels or adjust the course-specific target distribution.'
             ))
 
         # --- Out-of-Syllabus Analysis ---
@@ -207,41 +204,38 @@ class ExamAuditor:
 
         # --- Scoring Engine (Transparent 0-100 Calculation) ---
         # 1. Syllabus Coverage (25%): Percentage of units covered (at least 1 question)
-        cov_score = (covered_units_count / num_units) * 100.0
+        cov_score = (guaranteed_units / num_units) * 100.0
 
         # 2. Learning Outcomes (20%): Percentage of declared LOs tested
-        lo_score = (len(all_mapped_los) / total_syllabus_los) * 100.0 if total_syllabus_los > 0 else 80.0
-        lo_score = min(100.0, lo_score * 1.2) # modest normalization
+        lo_score = expected_los / total_syllabus_los * 100.0 if total_syllabus_los else 0.0
 
         # 3. Marks Distribution Balance (20%): Average deviation from expected weightage
         avg_deviation = sum(weightage_deviations) / len(weightage_deviations) if weightage_deviations else 0.0
         marks_score = max(0.0, 100.0 - (avg_deviation * 2.5))
 
-        # 4. Cognitive Level / Bloom's Balance (15%): Optimal zone is 35-50% lower, 50-65% higher
-        if 30.0 <= lower_order_pct <= 60.0:
-            blooms_score = 95.0
-        elif lower_order_pct < 30.0:
-            blooms_score = 80.0
-        else: # overly lower-order heavy
-            blooms_score = max(40.0, 100.0 - (lower_order_pct - 50.0) * 1.6)
+        # Total variation distance to the faculty's requested Bloom distribution.
+        blooms_score = max(0.0, 100.0 - blooms_distance)
 
         # 5. Out-of-Syllabus Cleanliness (10%): Deduct 25 points per out-of-syllabus question
-        oos_score = max(0.0, 100.0 - (out_of_syllabus_count * 25.0))
+        oos_score = max(0.0, 100.0 - sum(selection_weights[q.question_id] * 25
+            for q in self.paper.questions if q.is_out_of_syllabus))
 
         # 6. Repetition Risk Cleanliness (10%): Deduct for high repeats
-        high_repeats = sum(1 for q in self.paper.questions if (q.pyq_similarity or 0) >= 0.85)
-        med_repeats = sum(1 for q in self.paper.questions if 0.70 <= (q.pyq_similarity or 0) < 0.85)
+        high_repeats = sum(selection_weights[q.question_id] for q in self.paper.questions if (q.pyq_similarity or 0) >= self.rules.repeat_high)
+        med_repeats = sum(selection_weights[q.question_id] for q in self.paper.questions if self.rules.repeat_medium <= (q.pyq_similarity or 0) < self.rules.repeat_high)
         rep_score = max(0.0, 100.0 - (high_repeats * 30.0 + med_repeats * 12.0))
 
         # Weighted Overall Score
-        overall = (
-            (cov_score * 0.25) +
-            (lo_score * 0.20) +
-            (marks_score * 0.20) +
-            (blooms_score * 0.15) +
-            (oos_score * 0.10) +
-            (rep_score * 0.10)
-        )
+        components = dict(coverage=cov_score, outcomes=lo_score, marks=marks_score,
+                          blooms=blooms_score, syllabus=oos_score, repetition=rep_score)
+        components = {key: round(value, 1) for key, value in components.items()}
+        overall = sum(components[key] * weight / 100 for key, weight in self.rules.component_weights.items())
+        for stat in unit_stats:
+            if stat.total_marks > 0 and stat.guaranteed_marks == 0:
+                findings.append(AuditFinding(finding_id=f'CHOICE_U{stat.unit_number}', category='Coverage',
+                    severity='High', title=f'Unit {stat.unit_number} can be skipped',
+                    message='All questions for this unit are optional. Some valid student selections assess none of it.',
+                    recommended_action='Add a compulsory question or revise the choice groups.', related_units=[stat.unit_number]))
         overall_score = round(min(100.0, max(0.0, overall)), 1)
 
         # Grading
@@ -262,6 +256,8 @@ class ExamAuditor:
             verdict = "Paper fails several assessment-quality benchmarks. Major restructuring of units and questions required."
 
         return AuditReport(
+            rules=self.rules,
+            choice_groups=self.paper.choice_groups,
             syllabus=self.syllabus,
             pyqs=self.pyqs,
             overall_quality_score=overall_score,
@@ -283,6 +279,12 @@ class ExamAuditor:
                 "total_learning_outcomes": total_syllabus_los
             },
             paper_summary={
+                'printed_marks': sum(q.marks for q in self.paper.questions),
+                'scoring_version': '2.0',
+                'minimum_attempt_marks': min_marks,
+                'maximum_attempt_marks': max_marks,
+                'guaranteed_units': guaranteed_units,
+                'choice_basis': 'Expected marks assume uniform choice within each group; coverage score uses guaranteed units.' if self.paper.choice_groups else 'All questions compulsory.',
                 "paper_title": self.paper.paper_title,
                 "total_questions": len(self.paper.questions),
                 "total_marks": total_exam_marks,

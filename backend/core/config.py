@@ -51,6 +51,7 @@ class Settings(BaseModel):
     )
     MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "15"))
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    HISTORY_DB_PATH: str = os.getenv('HISTORY_DB_PATH', os.path.join(BASE_DIR, '.data', 'examlens.sqlite3'))
 
     # Path mappings
     BASE_DIR: str = BASE_DIR

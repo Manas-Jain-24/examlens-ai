@@ -8,10 +8,10 @@ function dashboard() {
   const elements = {};
   const document = {
     addEventListener() {},
-    querySelectorAll: () => [{ querySelector: sel => ({ value: sel === '.select-unit' ? '1' : 'Remember' }) }],
+    querySelectorAll: () => [{ querySelector: sel => ['.select-unit', '.select-blooms'].includes(sel) ? ({ value: sel === '.select-unit' ? '1' : 'Remember' }) : null }],
     getElementById: id => elements[id] ||= { value: '', classList: { add() {}, remove() {} } },
   };
-  const ctx = vm.createContext({ document, console });
+  const ctx = vm.createContext({ document, console, structuredClone });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8'), ctx);
   vm.runInContext(`
     currentSyllabus = { units: [] };
@@ -66,4 +66,59 @@ test('uploaded question text and tooltip payloads are escaped in rendered table'
   assert.ok(html.includes('&quot; onmouseover='));
   assert.ok(!html.includes('<img'));
   assert.ok(!html.includes('title="" onmouseover='));
+});
+
+test('recalculation submits course rules and optional choice groups', async () => {
+  const { ctx } = dashboard();
+  await vm.runInContext(`
+    currentAuditReport.rules = { repeat_medium: 0.6, repeat_high: 0.9 };
+    currentAuditReport.choice_groups = [{ group_id: 'ANY1', question_ids: ['Q2','Q3'], choose: 1 }];
+    recalculateFromTable();
+  `, ctx);
+  assert.equal(vm.runInContext('lastPayload.rules.repeat_high', ctx), 0.9);
+  assert.equal(vm.runInContext('lastPayload.choice_groups[0].choose', ctx), 1);
+});
+
+test('saving a revision stops if recalculation fails', async () => {
+  const { ctx } = dashboard();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/workspace.js'), 'utf8'), ctx);
+  await vm.runInContext(`
+    var saveCalled = false;
+    recalculateFromTable = async () => false;
+    apiJson = async () => { saveCalled = true; };
+    saveAudit();
+  `, ctx);
+  assert.equal(vm.runInContext('saveCalled', ctx), false);
+});
+
+test('API validation errors identify correction fields', async () => {
+  const { ctx } = dashboard();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/workspace.js'), 'utf8'), ctx);
+  const message = await vm.runInContext(`
+    fetch = async () => ({ ok: false, json: async () => ({ detail: [
+      { loc: ['body','paper','choice_groups'], msg: 'Groups cannot overlap' }
+    ] }) });
+    apiJson('/api/audit-reviewed').catch(error => error.message);
+  `, ctx);
+  assert.equal(message, 'paper.choice_groups: Groups cannot overlap');
+});
+
+test('saving uses current report, revision base, and revision note', async () => {
+  const { ctx, elements } = dashboard();
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../frontend/workspace.js'), 'utf8'), ctx);
+  elements['history-title'] = { value: 'Course final' };
+  elements['history-note'] = { value: 'Corrected OR choices' };
+  await vm.runInContext(`
+    recalculateFromTable = async () => true;
+    renderWorkspaceStatus = () => {};
+    savedAudit = { audit_id: 'example', revision: 2 };
+    apiJson = async (url, options) => {
+      lastPayload = JSON.parse(options.body);
+      return {audit_id:'example',revision:3};
+    };
+    saveAudit();
+  `, ctx);
+  assert.equal(vm.runInContext('lastPayload.expected_revision', ctx), 2);
+  assert.equal(vm.runInContext('lastPayload.note', ctx), 'Corrected OR choices');
+  assert.equal(vm.runInContext('savedAudit.revision', ctx), 3);
 });

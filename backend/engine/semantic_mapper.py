@@ -1,7 +1,7 @@
 import re
 from typing import List, Dict, Any, Tuple
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.metrics.pairwise import cosine_similarity
 from backend.models import Syllabus, SyllabusUnit, QuestionItem
 
@@ -10,7 +10,12 @@ class SemanticMapper:
         self.syllabus = syllabus
         self.vectorizer = TfidfVectorizer(
             ngram_range=(1, 2),
-            stop_words='english',
+            stop_words=sorted(set(ENGLISH_STOP_WORDS) | {
+                'explain', 'define', 'describe', 'discuss', 'compare', 'analyze',
+                'evaluate', 'create', 'implement', 'construct', 'write', 'state',
+                'list', 'understand', 'apply', 'design', 'illustrate', 'demonstrate',
+                'example', 'examples', 'question', 'following',
+            }),
             token_pattern=r'(?u)\b[a-zA-Z0-9_\-\./]{2,}\b'
         )
         self._build_index()
@@ -65,7 +70,6 @@ class SemanticMapper:
         best_idx = int(np.argmax(similarities))
         max_sim = float(similarities[best_idx])
         mapped_unit_num = self.unit_numbers[best_idx]
-        unit_obj = next((u for u in self.syllabus.units if u.unit_number == mapped_unit_num), None)
 
         # Keyword boost check: if specific topic keywords appear in question
         keyword_hits = []
@@ -85,6 +89,11 @@ class SemanticMapper:
                 elif len(t_words) >= 3 and matches >= max(2, int(len(t_words) * 0.5)):
                     keyword_hits.append(topic)
 
+        # Apply keyword preference before choosing an outcome, so both agree.
+        if keyword_hits and not any(k['unit_number'] == mapped_unit_num for k in keyword_hits):
+            mapped_unit_num = keyword_hits[0]['unit_number']
+        unit_obj = next((u for u in self.syllabus.units if u.unit_number == mapped_unit_num), None)
+
         # Map to specific Learning Outcome within the unit
         mapped_los = []
         if unit_obj and unit_obj.learning_outcomes:
@@ -93,8 +102,6 @@ class SemanticMapper:
             best_lo_idx = int(np.argmax(lo_sims))
             if lo_sims[best_lo_idx] > 0.05:
                 mapped_los.append(unit_obj.learning_outcomes[best_lo_idx])
-            else:
-                mapped_los.append(unit_obj.learning_outcomes[0])
 
         # Confidence calculation
         confidence = min(0.98, max(0.40, max_sim * 1.5))
@@ -129,6 +136,16 @@ class SemanticMapper:
                 reason = f"Contains specific technical concepts ({terms_str}) absent from approved course syllabus."
 
         return {
+            'evidence': {
+                'suggested_unit': mapped_unit_num,
+                'cosine_similarity': round(float(similarities[self.unit_numbers.index(mapped_unit_num)]), 4),
+                'matched_topics': [k['topic'] for k in keyword_hits if k['unit_number'] == mapped_unit_num],
+                'candidate_units': sorted([
+                    {'unit_number': n, 'similarity': round(float(s), 4)}
+                    for n, s in zip(self.unit_numbers, similarities)
+                ], key=lambda c: c['similarity'], reverse=True)[:3],
+                'method': 'TF-IDF cosine similarity plus topic keyword matches; not a probability.',
+            },
             "mapped_unit": mapped_unit_num,
             "mapped_outcomes": mapped_los,
             "confidence": round(confidence, 2),
@@ -145,4 +162,5 @@ class SemanticMapper:
             q.mapping_confidence = res["confidence"]
             q.is_out_of_syllabus = res["is_out_of_syllabus"]
             q.out_of_syllabus_reason = res["out_of_syllabus_reason"]
+            q.mapping_evidence = res.get('evidence', {})
         return questions

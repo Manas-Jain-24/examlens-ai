@@ -45,7 +45,7 @@ flowchart LR
 4. **Historical Repetition & Plagiarism Detection**: Analyzes previous-year questions (PYQs), flagging exact repeats ($>85\%$ similarity) and conceptual clones ($>70\%$ similarity).
 5. **Mark-Weightage Balance Analysis**: Compares unit marks against recommended percentages, defaulting to equal unit weights when none are provided.
 6. **Out-of-Syllabus Anomaly Detection**: Highlights concepts with low semantic proximity to approved syllabus nodes.
-7. **Transparent Exam Quality Score (0–100)**:
+7. **Transparent Exam Quality Score (0–100)** with configurable weights (defaults below):
    $$\text{Score} = 0.25 S_{\text{coverage}} + 0.20 S_{\text{outcomes}} + 0.20 S_{\text{marks}} + 0.15 S_{\text{blooms}} + 0.10 S_{\text{in-syllabus}} + 0.10 S_{\text{non-repeat}}$$
 8. **Human-in-the-Loop Faculty Override**: Allows faculty to review, adjust, or reclassify question mappings with instantaneous score recalculation.
 9. **PDF Audit Export**: Generates a downloadable report with coverage, scores, and moderation findings.
@@ -138,15 +138,59 @@ recalculations. Added and rewritten questions are re-audited on the server befor
 new scores are calculated. Faculty unit/Bloom overrides are preserved for other
 questions.
 
+## Review, revision history, and evaluation
+
+1. Choose **Audit New Paper**, upload or paste documents, then select **Preview &
+   Correct Documents**. Review original extracted text, edit syllabus units and
+   outcomes, and correct question IDs, sections, statements, marks, and past papers.
+2. Review detected **OR** / **attempt any N** groups. Add or remove groups as
+   needed. Groups use question IDs and cannot overlap. The dashboard reports
+   expected attempt marks and exact minimum/maximum bounds. Expected distributions
+   assume uniform choice; the coverage score counts only guaranteed units.
+3. In **Review documents & rules**, set unit weights, the six score component
+   weights, desired Bloom percentages, and medium/high repetition thresholds.
+   Each percentage distribution must total 100. Rules are retained in reports,
+   saved revisions, recalculations, and PDF exports.
+4. Expand **Why this mapping? / Faculty review** on a question to inspect matching
+   topics, similarity values, candidate units, and the detected Bloom verb. Record
+   an accepted/corrected/rejected decision, correct units/Bloom levels or the
+   out-of-syllabus flag, add a reason, then click **Recalculate**. Rejection records
+   a review decision; it does not remove the question from the paper.
+5. Enter an audit title and revision note, then **Save revision**. **Audit history**
+   reopens any revision and compares questions, scores, rules, syllabus changes,
+   and resolved/new/updated findings. Old revisions cannot be overwritten; saving
+   from a stale revision returns a conflict. Use **Save as new audit** for a copy.
+6. **Evaluate accuracy** manages reference examples and their reviewer attribution.
+   Three initial examples are explicitly unreviewed drafts. Run a draft smoke
+   check to exercise the pipeline, or evaluate only reviewed examples. With no
+   reviewed examples, reviewed accuracy is shown as unavailable. Export the
+   dataset for offline use:
+
+   ```bash
+   python -m backend.evaluation --include-drafts
+   python -m backend.evaluation --dataset your-reviewed-examples.json
+   ```
+
+History and locally edited evaluation examples are stored in
+`.data/examlens.sqlite3` (override with `HISTORY_DB_PATH`). Back up that file to
+preserve your work. Documents and notes remain on the server; the database and
+local QA outputs are ignored by Git. There is no account isolation, so run this
+version locally or behind an authenticated service.
+
+See [scoring and choice accounting](docs/SCORING.md) and
+[evaluation methodology](docs/EVALUATION.md) for definitions and limitations.
+
 ## Current limitations
 
 This is a prototype for faculty review. TF-IDF mapping, verb-based Bloom labels,
-and fixed scoring weights have not been validated as an institutional quality
+and the scoring defaults have not been validated as an institutional quality
 standard. Similarity scores are heuristic values, not calibrated probabilities.
 Reports and AI summaries do not certify NBA, NAAC, or ABET compliance.
 
 The optional Gemini service uses `GEMINI_API_KEY`; without a key it returns
 template-based suggestions. Live provider calls are not covered by the offline
-tests. Parsing is best suited to structured English text; scans, complex layouts,
-and optional-question mark accounting need further work. There is no login or
-persistent audit history yet.
+tests. Parsing is best suited to structured English text. Scans require OCR;
+complex layouts, unnumbered subparts, and nested choices require manual correction.
+The choice model supports disjoint groups, not arbitrary nested examination rules.
+There is no login or multi-user access control yet. Initial evaluation samples
+are not evidence of faculty-validated accuracy.

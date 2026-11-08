@@ -1,0 +1,38 @@
+[
+  {
+    "example_id": "arrays-and-trees",
+    "syllabus_text": "Course: CS201 Data Structures\nUnit 1: Arrays\n- Arrays\nLO: Explain arrays\nUnit 2: Binary Search Trees\n- Binary search trees\nLO: Implement binary search trees",
+    "paper_text": "Section A\nQ1. Define arrays. (5 Marks)\nQ2. Explain binary search trees. (10 Marks)",
+    "expected_question_count": 2,
+    "expected_printed_marks": 15,
+    "labels": [
+      {"question_id": "Q1", "expected_unit": 1, "expected_blooms": "Remember"},
+      {"question_id": "Q2", "expected_unit": 2, "expected_blooms": "Understand"}
+    ],
+    "reviewer": "", "reviewed_at": null
+  },
+  {
+    "example_id": "graphs-with-or",
+    "syllabus_text": "Course: CS202 Graph Algorithms\nUnit 1: Graph Traversals\n- Breadth first search\n- Depth first search\nLO: Compare breadth first search and depth first search\nUnit 2: Shortest Paths\n- Dijkstra algorithm\nLO: Explain Dijkstra algorithm",
+    "paper_text": "Q1. Compare breadth first search and depth first search. (10 Marks)\nOR\nQ1. Explain Dijkstra algorithm. (10 Marks)",
+    "expected_question_count": 2,
+    "expected_printed_marks": 20,
+    "labels": [
+      {"question_id": "Q1", "expected_unit": 1, "expected_blooms": "Analyze"},
+      {"question_id": "Q1_ALT2", "expected_unit": 2, "expected_blooms": "Understand"}
+    ],
+    "reviewer": "", "reviewed_at": null
+  },
+  {
+    "example_id": "outside-the-syllabus",
+    "syllabus_text": "Course: CS201 Data Structures\nUnit 1: Arrays\n- Arrays\nLO: Implement arrays\nUnit 2: Stacks\n- Stacks\nLO: Explain stacks",
+    "paper_text": "Section A: Answer any one\nQ1. Explain stacks. (5 Marks)\nQ2. Explain quantum teleportation. (5 Marks)",
+    "expected_question_count": 2,
+    "expected_printed_marks": 10,
+    "labels": [
+      {"question_id": "Q1", "expected_unit": 2, "expected_blooms": "Understand"},
+      {"question_id": "Q2", "expected_unit": null, "expected_blooms": "Understand", "expected_out_of_syllabus": true}
+    ],
+    "reviewer": "", "reviewed_at": null
+  }
+]

@@ -22,13 +22,19 @@ class SimilarityDetector:
         texts = [q.question_text for q in self.past_questions]
         self.pyq_tfidf = self.vectorizer.fit_transform(texts)
 
-    def check_repetitions(self, current_questions: List[QuestionItem], similarity_threshold: float = 0.70) -> Tuple[List[QuestionItem], List[AuditFinding]]:
+    def check_repetitions(self, current_questions: List[QuestionItem], similarity_threshold: float = 0.70, high_threshold: float = 0.85) -> Tuple[List[QuestionItem], List[AuditFinding]]:
         """
         Compares current examination questions against past year questions.
         Returns: (annotated_questions, repetition_findings)
         """
         findings: List[AuditFinding] = []
         if not self.past_questions or self.pyq_tfidf is None:
+            for q in current_questions:
+                q.pyq_similarity = None
+                q.pyq_matched_question = None
+            return current_questions, findings
+
+        if not current_questions:
             return current_questions, findings
 
         curr_texts = [q.question_text for q in current_questions]
@@ -41,10 +47,10 @@ class SimilarityDetector:
             max_sim = float(sims[best_idx])
             matched_pyq = self.past_questions[best_idx]
 
-            q.pyq_similarity = round(max_sim, 2)
+            q.pyq_similarity = max_sim
             q.pyq_matched_question = f"{matched_pyq.paper_year} ({matched_pyq.question_id}): {matched_pyq.question_text[:80]}..."
 
-            if max_sim >= 0.85:
+            if max_sim >= high_threshold:
                 findings.append(AuditFinding(
                     finding_id=f"REP_{q.question_id}",
                     category="Repetition",

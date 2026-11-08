@@ -1316,3 +1316,31 @@ body {
   font-size: 1.1rem;
   line-height: 1;
 }
+
+/* Review, persistence, and evaluation workspace */
+.hidden, [hidden] { display: none !important; }
+.workspace-card { margin-bottom: 24px; }
+.workspace-card p, .workspace-modal p { line-height: 1.6; margin: 10px 0; }
+.workspace-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 16px 0; }
+.workspace-modal { width: min(1150px, 96vw); max-width: 1150px; }
+.workspace-modal .modal-body { max-height: 78vh; overflow-y: auto; }
+.workspace-modal h3 { margin: 28px 0 12px; }
+.workspace-modal label, .workspace-card label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
+.workspace-modal input, .workspace-modal select, .workspace-modal textarea,
+.workspace-card input, .mapping-evidence input, .mapping-evidence select {
+  border: 1px solid #475569; background: #111827; color: #e2e8f0; padding: 9px; border-radius: 6px; min-width: 0; width: 100%;
+}
+.workspace-modal textarea { resize: vertical; }
+.editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 12px 0; }
+.editor-row { border: 1px solid #334155; border-radius: 10px; padding: 14px; margin: 12px 0; }
+.editor-row .remove-row { float: right; }
+.review-warnings, .inline-error { color: #fbbf24; white-space: pre-wrap; }
+.workspace-modal pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; }
+.mapping-evidence { margin-top: 12px; font-size: 0.8rem; white-space: normal; }
+.mapping-evidence summary { cursor: pointer; color: #a5b4fc; }
+.mapping-evidence label { display: block; margin: 8px 0; }
+.mapping-evidence input[type=checkbox] { width: auto; }
+.history-entry { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-bottom: 1px solid #334155; align-items: center; }
+.comparison-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.comparison-table th, .comparison-table td { padding: 10px; border: 1px solid #334155; text-align: left; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .navbar { flex-wrap: wrap; gap: 12px; } .nav-actions { flex-wrap: wrap; } }

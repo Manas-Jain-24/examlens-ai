@@ -1,10 +1,10 @@
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, status
+from fastapi import APIRouter, UploadFile, File, Form, status, HTTPException
 from backend.core.config import settings
 from backend.core.logger import logger
 from backend.core.exceptions import DocumentParsingError, AuditExecutionError, PayloadTooLargeError
 from backend.models import (
-    Syllabus, QuestionPaper, AuditReport, RecalculateRequest
+    Syllabus, QuestionPaper, AuditReport, RecalculateRequest, ReviewedDraft
 )
 from backend.engine.parsers import (
     extract_text_from_pdf, parse_syllabus_text,
@@ -82,6 +82,8 @@ async def audit_examination(
         logger.info("Parsing uploaded syllabus and question paper documents...")
         syllabus = parse_syllabus_text(raw_syl)
         paper = parse_question_paper_text(raw_paper)
+        if not paper.questions:
+            raise DocumentParsingError('No numbered questions detected. Use document preview to add or correct questions.')
         pyqs = parse_pyq_text(raw_pyq) if raw_pyq else []
 
         logger.info(
@@ -113,20 +115,33 @@ def recalculate_audit(req: RecalculateRequest):
             paper_title=req.paper_title or "Examination Paper",
             course_code=req.syllabus.course_code,
             total_marks=total_marks,
-            questions=req.questions
+            questions=req.questions,
+            choice_groups=req.choice_groups
         )
+        ReviewedDraft(syllabus=req.syllabus, paper=paper, pyqs=req.pyqs or [], rules=req.rules)
+        if not req.questions:
+            raise ValueError('At least one question is required.')
+        units = {u.unit_number: u for u in req.syllabus.units}
+        for q in req.questions:
+            if q.mapped_unit not in units:
+                raise ValueError(f'{q.question_id}: choose an existing syllabus unit.')
+            # Outcomes must belong to the faculty-selected unit.
+            q.mapped_outcomes = [lo for lo in q.mapped_outcomes if lo in units[q.mapped_unit].learning_outcomes]
         logger.info(f"Recalculating audit with {len(req.questions)} questions ({total_marks} Marks)...")
-        auditor = ExamAuditor(syllabus=req.syllabus, paper=paper, pyqs=req.pyqs or [])
+        auditor = ExamAuditor(syllabus=req.syllabus, paper=paper, pyqs=req.pyqs or [], rules=req.rules)
         # A rewrite is a new question: re-check its alignment and cognitive level
         # rather than trusting the old question's annotations.
         changed = [q for q in req.questions if q.question_id in req.changed_question_ids]
         auditor.mapper.map_questions(changed)
         for q in changed:
             q.blooms_level, q.command_verb, _ = classify_blooms_taxonomy(q.question_text)
+            q.review_status = 'pending'
         report = auditor.recalculate_with_overrides(req.questions)
         logger.info(f"Recalculation complete: New Score = {report.overall_quality_score}")
         return report
 
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     except Exception as e:
         logger.exception(f"Recalculation error: {str(e)}")
         raise AuditExecutionError(f"Recalculation failed: {str(e)}")

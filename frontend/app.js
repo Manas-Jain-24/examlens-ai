@@ -106,6 +106,7 @@ async function loadDemoAudit() {
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
     const report = await res.json();
     currentAuditReport = report;
+    if (typeof resetSavedAudit === 'function') resetSavedAudit();
     
     currentSyllabus = report.syllabus;
     currentPyqs = report.pyqs || [];
@@ -149,7 +150,7 @@ async function handleFormAudit() {
   showLoading('Extracting syllabus structure, mapping questions, and auditing quality metrics...');
 
   try {
-    const res = await fetch('/api/audit', {
+    const res = await fetch('/api/parse', {
       method: 'POST',
       body: formData
     });
@@ -157,14 +158,8 @@ async function handleFormAudit() {
       const errData = await res.json();
       throw new Error(errData.message || errData.detail || `Server error ${res.status}`);
     }
-    const report = await res.json();
-    currentAuditReport = report;
-    
-    currentSyllabus = report.syllabus;
-    currentPyqs = report.pyqs || [];
-    changedQuestionIds.clear();
-
-    renderDashboard(report);
+    const draft = await res.json();
+    openReviewDraft(draft, true);
   } catch (err) {
     alert('Audit failed: ' + err.message);
   } finally {
@@ -181,7 +176,10 @@ function collectTableOverrides() {
     return {
       ...q,
       mapped_unit: parseInt(row.querySelector('.select-unit').value, 10),
-      blooms_level: row.querySelector('.select-blooms').value
+      blooms_level: row.querySelector('.select-blooms').value,
+      review_status: row.querySelector('.review-status')?.value || q.review_status || 'pending',
+      review_note: row.querySelector('.review-note')?.value ?? q.review_note ?? '',
+      is_out_of_syllabus: row.querySelector('.review-oos')?.checked ?? q.is_out_of_syllabus
     };
   });
 }
@@ -198,6 +196,8 @@ async function recalculateFromTable(readTable = true) {
       questions: currentAuditReport.mapped_questions,
       changed_question_ids: [...changedQuestionIds],
       pyqs: currentPyqs,
+      rules: currentAuditReport.rules,
+      choice_groups: currentAuditReport.choice_groups || [],
       paper_title: currentAuditReport.paper_summary.paper_title
     };
 
@@ -207,13 +207,18 @@ async function recalculateFromTable(readTable = true) {
       body: JSON.stringify(payload)
     });
 
-    if (!res.ok) throw new Error('Recalculation failed');
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || error.detail || 'Recalculation failed');
+    }
     const newReport = await res.json();
     currentAuditReport = newReport;
     changedQuestionIds.clear();
     renderDashboard(newReport);
+    return true;
   } catch (err) {
     alert('Error recalculating score: ' + err.message);
+    return false;
   } finally {
     hideLoading();
   }
@@ -221,6 +226,7 @@ async function recalculateFromTable(readTable = true) {
 
 // Render Entire Dashboard
 function renderDashboard(report) {
+  if (typeof renderWorkspaceStatus === 'function') renderWorkspaceStatus();
   // Show PDF Export and AI Summary buttons
   document.getElementById('btn-export-pdf').style.display = 'inline-flex';
   const aiSummaryBtn = document.getElementById('btn-ai-summary');
@@ -233,7 +239,7 @@ function renderDashboard(report) {
   document.getElementById('disp-paper-title').innerHTML = `<i class="fa-regular fa-file-lines"></i> ${escapeHtml(report.paper_summary.paper_title || 'Draft Examination Paper')}`;
   document.getElementById('disp-total-marks').textContent = `${report.paper_summary.total_marks || 100} M`;
   document.getElementById('disp-total-questions').textContent = `${report.paper_summary.total_questions || 0} Items`;
-  document.getElementById('disp-coverage-ratio').textContent = `${report.paper_summary.covered_units || 0} / ${report.syllabus_summary.total_units || 0} Units`;
+  document.getElementById('disp-coverage-ratio').textContent = `${report.paper_summary.guaranteed_units ?? report.paper_summary.covered_units ?? 0} / ${report.syllabus_summary.total_units || 0} Units`;
 
   // 2. Score Dial & Grade
   const scoreVal = report.overall_quality_score;
@@ -275,18 +281,18 @@ function renderDashboard(report) {
 function renderScoreBreakdown(sb) {
   const container = document.getElementById('score-breakdown-container');
   const items = [
-    { label: 'Syllabus Coverage', score: sb.syllabus_coverage_score, weight: '25%' },
-    { label: 'Learning Outcomes Alignment', score: sb.learning_outcomes_score, weight: '20%' },
-    { label: 'Marks Weightage Balance', score: sb.marks_distribution_score, weight: '20%' },
-    { label: "Bloom's Cognitive Balance", score: sb.blooms_cognitive_score, weight: '15%' },
-    { label: 'Out-of-Syllabus Cleanliness', score: sb.out_of_syllabus_score, weight: '10%' },
-    { label: 'Repetition Risk Cleanliness', score: sb.repetition_risk_score, weight: '10%' }
+    { key: 'coverage', label: 'Guaranteed Unit Coverage', score: sb.syllabus_coverage_score },
+    { key: 'outcomes', label: 'Learning Outcomes Alignment', score: sb.learning_outcomes_score },
+    { key: 'marks', label: 'Marks Weightage Balance', score: sb.marks_distribution_score },
+    { key: 'blooms', label: "Bloom's Target Alignment", score: sb.blooms_cognitive_score },
+    { key: 'syllabus', label: 'Out-of-Syllabus Cleanliness', score: sb.out_of_syllabus_score },
+    { key: 'repetition', label: 'Repetition Risk Cleanliness', score: sb.repetition_risk_score }
   ];
 
   container.innerHTML = items.map(item => `
     <div class="breakdown-item">
       <div class="breakdown-labels">
-        <span>${item.label} <small style="color: var(--text-dim);">(${item.weight})</small></span>
+        <span>${item.label} <small style="color: var(--text-dim);">(${currentAuditReport.rules?.component_weights[item.key] ?? 0}%)</small></span>
         <span>${item.score.toFixed(0)}%</span>
       </div>
       <div class="progress-track">
@@ -419,7 +425,10 @@ function renderUnitCoverageMatrix(unitStats) {
     let statusClass = 'status-well-covered';
     let badgeHtml = '<span class="badge badge-success"><i class="fa-solid fa-check"></i> Well Covered</span>';
 
-    if (u.coverage_status === 'Not Assessed') {
+    if (u.coverage_status === 'Optional Only') {
+      statusClass = 'status-underrepresented';
+      badgeHtml = '<span class="badge badge-warning">Optional Only</span>';
+    } else if (u.coverage_status === 'Not Assessed') {
       statusClass = 'status-not-assessed';
       badgeHtml = '<span class="badge badge-danger"><i class="fa-solid fa-triangle-exclamation"></i> Not Assessed</span>';
     } else if (u.coverage_status === 'Overrepresented') {
@@ -450,6 +459,7 @@ function renderUnitCoverageMatrix(unitStats) {
           <span>Questions: <strong>${u.questions_count}</strong></span>
           <span>Marks: <strong>${u.total_marks}M (${u.marks_percentage}%)</strong></span>
           <span>Exp: <strong>${u.expected_weightage_percent}%</strong></span>
+          <span>Guaranteed: <strong>${u.guaranteed_marks ?? u.total_marks}M</strong> · Possible: <strong>${u.possible_marks ?? u.total_marks}M</strong></span>
         </div>
         ${aiGenBtn}
       </div>
@@ -522,7 +532,7 @@ function renderQuestionsTable(questions, unitCoverage) {
     ).join('');
 
     // Confidence badge
-    const confVal = q.mapping_confidence || 0.5;
+    const confVal = q.mapping_confidence ?? 0;
     let confClass = 'conf-med';
     if (confVal >= 0.75) confClass = 'conf-high';
     else if (confVal < 0.45) confClass = 'conf-low';
@@ -531,7 +541,7 @@ function renderQuestionsTable(questions, unitCoverage) {
     let alertsHtml = '<span style="color: var(--text-dim); font-size: 0.75rem;">None</span>';
     if (q.is_out_of_syllabus) {
       alertsHtml = `<span class="badge badge-danger" title="${escapeHtml(q.out_of_syllabus_reason || 'Out of syllabus')}"><i class="fa-solid fa-triangle-exclamation"></i> Out-of-Syllabus</span>`;
-    } else if (q.pyq_similarity && q.pyq_similarity >= 0.70) {
+    } else if (q.pyq_similarity && q.pyq_similarity >= (currentAuditReport?.rules?.repeat_medium ?? 0.70)) {
       const matchPct = Math.round(q.pyq_similarity * 100);
       alertsHtml = `<span class="badge badge-warning" title="${escapeHtml(q.pyq_matched_question || '')}"><i class="fa-solid fa-copy"></i> ${matchPct}% Repeat</span>`;
     }
@@ -546,6 +556,16 @@ function renderQuestionsTable(questions, unitCoverage) {
             <span>Type: ${escapeHtml(q.question_type || 'Descriptive')}</span>
             ${q.command_verb ? ` • Verb: <em style="color: var(--primary-light);">${escapeHtml(q.command_verb)}</em>` : ''}
           </div>
+          <details class="mapping-evidence"><summary>Why this mapping? / Faculty review</summary>
+            <p>Suggested unit: ${escapeHtml(q.mapping_evidence?.suggested_unit ?? '—')} · Cosine similarity: ${escapeHtml(q.mapping_evidence?.cosine_similarity ?? '—')}</p>
+            <p>Matched topics: ${escapeHtml((q.mapping_evidence?.matched_topics || []).join(', ') || 'No direct topic match')}</p>
+            <p>Alternatives: ${escapeHtml((q.mapping_evidence?.candidate_units || []).map(c => `Unit ${c.unit_number}: ${c.similarity}`).join('; '))}</p>
+            <p>Bloom verb: ${escapeHtml(q.command_verb || 'No command verb detected')}. Similarity is a heuristic, not a probability.</p>
+            <label>Faculty decision <select class="review-status">${['pending', 'accepted', 'corrected', 'rejected'].map(status => `<option ${status === (q.review_status || 'pending') ? 'selected' : ''}>${status}</option>`).join('')}</select></label>
+            <label><input type="checkbox" class="review-oos" ${q.is_out_of_syllabus ? 'checked' : ''}> Out of syllabus</label>
+            <label>Review reason <input class="review-note" value="${escapeHtml(q.review_note || '')}" placeholder="Explain a correction or rejection"></label>
+            <small>Use the unit/Bloom controls to correct the mapping; rejection records your decision but does not remove the question.</small>
+          </details>
         </td>
         <td><span class="marks-badge">${q.marks}M</span></td>
         <td>

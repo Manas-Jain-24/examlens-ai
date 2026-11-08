@@ -1,4 +1,5 @@
 import io
+from html import escape
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import (
@@ -49,7 +50,8 @@ def generate_pdf_report(report: AuditReport) -> bytes:
         leading=16,
         textColor=colors.HexColor('#0F172A'),
         spaceBefore=12,
-        spaceAfter=6
+        spaceAfter=6,
+        keepWithNext=True
     )
     body_style = ParagraphStyle(
         'DocBody',
@@ -68,7 +70,7 @@ def generate_pdf_report(report: AuditReport) -> bytes:
     elements = []
 
     # Title & Header
-    elements.append(Paragraph("ExamLens AI — Assessment Quality Audit Report", title_style))
+    elements.append(Paragraph("ExamLens AI - Assessment Quality Audit Report", title_style))
     elements.append(Paragraph("Autonomous Examination Syllabus-Alignment & Cognitive Balance Verification", subtitle_style))
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#4F46E5'), spaceAfter=12))
@@ -76,12 +78,12 @@ def generate_pdf_report(report: AuditReport) -> bytes:
     # Meta Info Table
     meta_data = [
         [
-            Paragraph(f"<b>Course:</b> {report.syllabus_summary.get('course_name', 'N/A')} ({report.syllabus_summary.get('course_code', '')})", body_style),
+            Paragraph(f"<b>Course:</b> {escape(str(report.syllabus_summary.get('course_name', 'N/A')))} ({escape(str(report.syllabus_summary.get('course_code', '')))})", body_style),
             Paragraph(f"<b>Total Questions:</b> {report.paper_summary.get('total_questions', 0)}", body_style)
         ],
         [
-            Paragraph(f"<b>Paper Title:</b> {report.paper_summary.get('paper_title', 'Draft Paper')}", body_style),
-            Paragraph(f"<b>Total Marks:</b> {report.paper_summary.get('total_marks', 0)} M", body_style)
+            Paragraph(f"<b>Paper Title:</b> {escape(str(report.paper_summary.get('paper_title', 'Draft Paper')))}", body_style),
+            Paragraph(f"<b>Expected Attempt Marks:</b> {report.paper_summary.get('total_marks', 0)} M", body_style)
         ],
         [
             Paragraph(f"<b>Syllabus Units:</b> {report.syllabus_summary.get('total_units', 0)} Units | {report.syllabus_summary.get('total_topics', 0)} Topics", body_style),
@@ -98,14 +100,23 @@ def generate_pdf_report(report: AuditReport) -> bytes:
     elements.append(meta_table)
     elements.append(Spacer(1, 12))
 
+    summary = report.paper_summary
+    elements.append(Paragraph(escape(str(summary.get('choice_basis', 'All questions compulsory.'))), body_style))
+    elements.append(Paragraph(f"Printed marks: {summary.get('printed_marks', summary.get('total_marks'))}. "
+        f"Valid attempt marks: {summary.get('minimum_attempt_marks', summary.get('total_marks'))} - "
+        f"{summary.get('maximum_attempt_marks', summary.get('total_marks'))}. "
+        f"Guaranteed units: {summary.get('guaranteed_units', summary.get('covered_units'))}.", body_style))
+    elements.append(Paragraph('Faculty review aid only. This report does not certify accreditation compliance.', body_style))
+    elements.append(Spacer(1, 8))
+
     # Quality Score Card Box
     score_val = report.overall_quality_score
     score_color = colors.HexColor('#16A34A') if score_val >= 80 else (colors.HexColor('#D97706') if score_val >= 70 else colors.HexColor('#DC2626'))
     
     score_box_data = [
         [
-            Paragraph(f"<font size=24 color='{score_color.hexval()}'><b>{score_val} / 100</b></font><br/><b>Overall Exam Quality Score</b>", ParagraphStyle('Score', alignment=TA_CENTER)),
-            Paragraph(f"<b>Quality Grade:</b> {report.grade}<br/><br/><b>Executive Verdict:</b> {report.verdict_summary}", body_style)
+            Paragraph(f"<font size=24 color='{score_color.hexval()}'><b>{score_val} / 100</b></font><br/><b>Overall Exam Quality Score</b>", ParagraphStyle('Score', alignment=TA_CENTER, leading=27, fontSize=10)),
+            Paragraph(f"<b>Quality Grade:</b> {escape(report.grade)}<br/><br/><b>Executive Verdict:</b> {escape(report.verdict_summary)}", body_style)
         ]
     ]
     score_table = Table(score_box_data, colWidths=[200, 340])
@@ -122,17 +133,19 @@ def generate_pdf_report(report: AuditReport) -> bytes:
     # Score Breakdown Sub-Scores
     elements.append(Paragraph("Transparent Quality Score Breakdown", h2_style))
     sb = report.score_breakdown
-    breakdown_data = [
-        ["Criterion", "Target Weight", "Score (0-100)", "Weighted Contribution"],
-        ["Syllabus Unit Coverage", "25%", f"{sb.syllabus_coverage_score}%", f"{round(sb.syllabus_coverage_score * 0.25, 1)} pts"],
-        ["Learning Outcomes Alignment", "20%", f"{sb.learning_outcomes_score}%", f"{round(sb.learning_outcomes_score * 0.20, 1)} pts"],
-        ["Marks Distribution Balance", "20%", f"{sb.marks_distribution_score}%", f"{round(sb.marks_distribution_score * 0.20, 1)} pts"],
-        ["Bloom's Cognitive Balance", "15%", f"{sb.blooms_cognitive_score}%", f"{round(sb.blooms_cognitive_score * 0.15, 1)} pts"],
-        ["Out-of-Syllabus Cleanliness", "10%", f"{sb.out_of_syllabus_score}%", f"{round(sb.out_of_syllabus_score * 0.10, 1)} pts"],
-        ["Repetition Risk Cleanliness", "10%", f"{sb.repetition_risk_score}%", f"{round(sb.repetition_risk_score * 0.10, 1)} pts"],
-        ["TOTAL EVALUATION", "100%", "", f"<b>{score_val} / 100</b>"]
-    ]
-    breakdown_table = Table(breakdown_data, colWidths=[180, 100, 120, 140])
+    breakdown_data = [["Criterion", "Target Weight", "Score (0-100)", "Weighted Contribution"]]
+    for key, label, value in [
+        ('coverage', 'Guaranteed Unit Coverage', sb.syllabus_coverage_score),
+        ('outcomes', 'Learning Outcomes Alignment', sb.learning_outcomes_score),
+        ('marks', 'Marks Distribution Balance', sb.marks_distribution_score),
+        ('blooms', "Bloom's Target Alignment", sb.blooms_cognitive_score),
+        ('syllabus', 'Out-of-Syllabus Cleanliness', sb.out_of_syllabus_score),
+        ('repetition', 'Repetition Risk Cleanliness', sb.repetition_risk_score),
+    ]:
+        weight = report.rules.component_weights[key]
+        breakdown_data.append([label, f'{weight:g}%', f'{value}%', f'{value * weight / 100:.1f} pts'])
+    breakdown_data.append(['TOTAL EVALUATION', '100%', '', f'{score_val} / 100'])
+    breakdown_table = Table(breakdown_data, colWidths=[180, 100, 120, 140], repeatRows=1)
     breakdown_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E293B')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -154,7 +167,7 @@ def generate_pdf_report(report: AuditReport) -> bytes:
         status_color = "#16A34A" if u.coverage_status == "Well Covered" else ("#DC2626" if u.coverage_status == "Not Assessed" else "#D97706")
         unit_rows.append([
             f"Unit {u.unit_number}",
-            Paragraph(u.unit_title, body_style),
+            Paragraph(escape(u.unit_title), body_style),
             str(u.topics_count),
             str(u.questions_count),
             f"{u.total_marks}M",
@@ -162,7 +175,7 @@ def generate_pdf_report(report: AuditReport) -> bytes:
             f"{u.expected_weightage_percent}%",
             Paragraph(f"<font color='{status_color}'><b>{u.coverage_status}</b></font>", body_style)
         ])
-    unit_table = Table(unit_rows, colWidths=[45, 145, 45, 55, 45, 55, 65, 85])
+    unit_table = Table(unit_rows, colWidths=[35, 145, 35, 45, 45, 50, 55, 130], repeatRows=1)
     unit_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#334155')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -175,6 +188,8 @@ def generate_pdf_report(report: AuditReport) -> bytes:
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
     ]))
     elements.append(unit_table)
+    for unit in report.unit_coverage:
+        elements.append(Paragraph(f'Unit {unit.unit_number}: guaranteed {unit.guaranteed_marks:g} marks; possible {unit.possible_marks:g} marks.', body_style))
     elements.append(Spacer(1, 14))
 
     # Bloom's Cognitive Distribution
@@ -194,6 +209,8 @@ def generate_pdf_report(report: AuditReport) -> bytes:
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')])
     ]))
     elements.append(blooms_table)
+    elements.append(Paragraph('Bloom targets (%): ' + escape(', '.join(f'{key}: {value:g}' for key, value in report.rules.blooms_targets.items())), body_style))
+    elements.append(Paragraph(f'Repetition thresholds: medium {report.rules.repeat_medium:g}; high {report.rules.repeat_high:g}.', body_style))
     elements.append(Spacer(1, 14))
 
     # Findings & Faculty Recommendations
@@ -203,13 +220,13 @@ def generate_pdf_report(report: AuditReport) -> bytes:
             sev_color = "#DC2626" if f.severity == "High" else ("#D97706" if f.severity == "Medium" else "#3B82F6")
             f_box_data = [
                 [
-                    Paragraph(f"<font color='{sev_color}'><b>[{f.severity.upper()} SEVERITY] {f.title}</b></font> ({f.category})", bold_body),
+                    Paragraph(f"<font color='{sev_color}'><b>[{escape(f.severity.upper())} SEVERITY] {escape(f.title)}</b></font> ({escape(f.category)})", bold_body),
                 ],
                 [
-                    Paragraph(f"<b>Issue:</b> {f.message}", body_style)
+                    Paragraph(f"<b>Issue:</b> {escape(f.message)}", body_style)
                 ],
                 [
-                    Paragraph(f"<b>Recommended Action:</b> {f.recommended_action}", body_style)
+                    Paragraph(f"<b>Recommended Action:</b> {escape(f.recommended_action)}", body_style)
                 ]
             ]
             f_table = Table(f_box_data, colWidths=[540])
@@ -221,7 +238,24 @@ def generate_pdf_report(report: AuditReport) -> bytes:
             elements.append(f_table)
             elements.append(Spacer(1, 6))
 
+    elements.append(Paragraph('Mapping Evidence & Faculty Review', h2_style))
+    for q in report.mapped_questions:
+        evidence = q.mapping_evidence
+        text = (f'{q.question_id}: {q.question_text}\n'
+                f'Suggested unit: {evidence.get("suggested_unit", "N/A")}; selected unit: {q.mapped_unit}. '
+                f'Topics: {", ".join(evidence.get("matched_topics", [])) or "No direct match"}. '
+                f'Cosine similarity: {evidence.get("cosine_similarity", "N/A")}. '
+                f'Bloom: {q.blooms_level}; verb: {q.command_verb or "N/A"}. '
+                f'Review: {q.review_status}. {q.review_note}')
+        elements.append(Paragraph(escape(text).replace('\n', '<br/>'), body_style))
+        elements.append(Spacer(1, 8))
     # Build PDF
-    doc.build(elements)
+    def footer(canvas, document):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 8)
+        canvas.drawString(36, 20, 'ExamLens AI - faculty review aid')
+        canvas.drawRightString(576, 20, f'Page {document.page}')
+        canvas.restoreState()
+    doc.build(elements, onFirstPage=footer, onLaterPages=footer)
     buffer.seek(0)
     return buffer.getvalue()
