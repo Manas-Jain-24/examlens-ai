@@ -2,16 +2,18 @@ import os
 import sys
 import time
 import webbrowser
+import threading
 import uvicorn
+from backend.core.config import settings
 
 def main():
-    port = 8000
-    host = "127.0.0.1"
+    port = settings.PORT
+    host = settings.HOST
     url = f"http://{host}:{port}"
 
-    print("=" * 65)
-    print(" ExamLens AI — Examination Quality & Syllabus-Alignment Auditor ")
-    print("=" * 65)
+    print("=" * 68)
+    print(f" {settings.PROJECT_NAME} v{settings.VERSION} — Assessment Quality & Alignment Auditor ")
+    print("=" * 68)
     print(f"\n[+] Starting server at: {url}")
     print("[+] Opening dashboard in your default browser...")
     print("[+] Press Ctrl+C in this terminal to stop the server.\n")
@@ -24,11 +26,10 @@ def main():
         except Exception:
             pass
 
-    import threading
     threading.Thread(target=open_browser, daemon=True).start()
 
-    # Run Uvicorn
-    uvicorn.run("backend.app:app", host=host, port=port, reload=False, log_level="info")
+    # Run Uvicorn with settings
+    uvicorn.run("backend.app:app", host=host, port=port, reload=settings.DEBUG, log_level="info")
 
 if __name__ == "__main__":
     main()

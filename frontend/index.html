@@ -41,6 +41,9 @@
       <button id="btn-open-upload" class="btn btn-primary">
         <i class="fa-solid fa-file-arrow-up"></i> Audit New Paper
       </button>
+      <button id="btn-ai-summary" class="btn btn-secondary" style="display: none;">
+        <i class="fa-solid fa-brain"></i> AI Accreditation Note
+      </button>
       <button id="btn-export-pdf" class="btn btn-outline" style="display: none;">
         <i class="fa-solid fa-file-pdf"></i> Export Audit PDF
       </button>
@@ -261,14 +264,15 @@
           <table class="audit-table">
             <thead>
               <tr>
-                <th style="width: 70px;">Q ID</th>
-                <th style="width: 80px;">Section</th>
+                <th style="width: 65px;">Q ID</th>
+                <th style="width: 75px;">Section</th>
                 <th>Question Statement</th>
-                <th style="width: 70px;">Marks</th>
+                <th style="width: 65px;">Marks</th>
                 <th style="width: 170px;">Mapped Unit</th>
-                <th style="width: 140px;">Bloom's Level</th>
-                <th style="width: 120px;">Confidence</th>
+                <th style="width: 130px;">Bloom's Level</th>
+                <th style="width: 100px;">Confidence</th>
                 <th style="width: 130px;">Alerts</th>
+                <th style="width: 110px;">AI Action</th>
               </tr>
             </thead>
             <tbody id="questions-table-body">
@@ -279,6 +283,143 @@
       </section>
 
     </div>
+
+    <!-- Modal 1: AI Question Rewriter -->
+    <section id="ai-rewrite-modal" class="modal-backdrop hidden">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <div>
+            <h2><i class="fa-solid fa-wand-magic-sparkles"></i> AI Question Rewriter & Cognitive Elevation</h2>
+            <p>Elevate question rigor to higher Bloom's taxonomy levels and align strictly with syllabus outcomes.</p>
+          </div>
+          <button id="btn-close-rewrite" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="ai-original-box">
+            <span class="sub-label">Original Question:</span>
+            <p id="rewrite-orig-text" class="orig-q-text"></p>
+            <div class="q-meta-row">
+              <span id="rewrite-orig-blooms" class="badge badge-info">Current Level: Understand</span>
+              <span id="rewrite-orig-issue" class="badge badge-warning">Issue: Rote Learning</span>
+            </div>
+          </div>
+
+          <div class="ai-controls-row">
+            <div class="control-group">
+              <label for="select-target-blooms"><strong>Target Cognitive Level:</strong></label>
+              <select id="select-target-blooms" class="select-edit">
+                <option value="Apply">Apply (Application & Implementation)</option>
+                <option value="Analyze" selected>Analyze (Asymptotic & Comparative Analysis)</option>
+                <option value="Evaluate">Evaluate (Critical Defense & Trade-offs)</option>
+                <option value="Create">Create (Architectural Synthesis)</option>
+              </select>
+            </div>
+            <button id="btn-run-ai-rewrite" class="btn btn-primary">
+              <i class="fa-solid fa-bolt"></i> Generate AI Rewrite
+            </button>
+          </div>
+
+          <!-- Output Preview -->
+          <div id="ai-rewrite-output-container" class="ai-output-box hidden">
+            <div class="output-header">
+              <span class="badge badge-success"><i class="fa-solid fa-check"></i> Recommended AI Revision</span>
+              <span id="rewrite-engine-badge" class="badge-engine">Gemini 3.8 Flash</span>
+            </div>
+            <textarea id="rewrite-result-text" class="rewrite-textarea" rows="4"></textarea>
+            <div class="rationale-box">
+              <i class="fa-solid fa-circle-info"></i>
+              <span id="rewrite-rationale-text"></span>
+            </div>
+            <div class="modal-footer-actions">
+              <button id="btn-apply-rewrite" class="btn btn-success">
+                <i class="fa-solid fa-arrow-down-to-bracket"></i> Apply Revision to Paper
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal 2: AI Unit Gap Filler (Question Generator) -->
+    <section id="ai-generate-modal" class="modal-backdrop hidden">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <div>
+            <h2><i class="fa-solid fa-puzzle-piece"></i> AI Syllabus Gap Filler & Question Generator</h2>
+            <p>Generate balanced, accredited examination questions for unassessed or underrepresented units.</p>
+          </div>
+          <button id="btn-close-generate" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="unit-target-info">
+            <h3 id="gen-unit-title">Unit 4: Graph Algorithms</h3>
+            <p id="gen-unit-topics" class="text-dim"></p>
+          </div>
+
+          <div class="ai-controls-row">
+            <div class="control-group">
+              <label><strong>Target Cognitive Level:</strong></label>
+              <select id="gen-target-blooms" class="select-edit">
+                <option value="Apply">Apply (Problem Solving)</option>
+                <option value="Analyze" selected>Analyze (Algorithmic Analysis)</option>
+                <option value="Evaluate">Evaluate (Design Justification)</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label><strong>Marks:</strong></label>
+              <select id="gen-target-marks" class="select-edit">
+                <option value="5">5 Marks (Short Problem)</option>
+                <option value="10" selected>10 Marks (Comprehensive Problem)</option>
+                <option value="15">15 Marks (Full Case Study)</option>
+              </select>
+            </div>
+            <button id="btn-run-ai-generate" class="btn btn-primary">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Questions
+            </button>
+          </div>
+
+          <!-- Candidates Container -->
+          <div id="gen-candidates-container" class="candidates-list hidden">
+            <!-- Dynamically populated candidate cards -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal 3: AI Accreditation Executive Summary -->
+    <section id="ai-summary-modal" class="modal-backdrop hidden">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <div>
+            <h2><i class="fa-solid fa-certificate"></i> AI Accreditation & Moderation Review Note</h2>
+            <p>Executive NBA, ABET & NAAC Outcome-Based Education (OBE) Audit Commentary.</p>
+          </div>
+          <button id="btn-close-summary" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="readiness-banner" id="summary-readiness-banner">
+            <div class="readiness-badge" id="summary-readiness-badge">Accreditation Ready</div>
+            <div class="readiness-text">Assessed against syllabus outcome mapping, cognitive depth, and historical duplication standards.</div>
+          </div>
+
+          <div class="summary-section">
+            <h4><i class="fa-solid fa-file-contract"></i> Executive Assessment</h4>
+            <p id="summary-narrative" class="summary-text"></p>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-col strengths-col">
+              <h4><i class="fa-solid fa-circle-check" style="color: var(--success);"></i> Key Strengths</h4>
+              <ul id="summary-strengths-list"></ul>
+            </div>
+            <div class="summary-col actions-col">
+              <h4><i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i> Priority Committee Actions</h4>
+              <ul id="summary-actions-list"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="footer">

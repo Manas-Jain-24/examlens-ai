@@ -82,6 +82,8 @@ class ScoreBreakdown(BaseModel):
     repetition_risk_score: float    # 0-100 (weight: 10%)
 
 class AuditReport(BaseModel):
+    syllabus: Optional[Syllabus] = None
+    pyqs: List[PreviousYearQuestion] = Field(default_factory=list)
     overall_quality_score: float
     grade: str
     verdict_summary: str
@@ -92,3 +94,69 @@ class AuditReport(BaseModel):
     blooms_distribution: List[BloomsDistributionStat]
     findings: List[AuditFinding]
     mapped_questions: List[QuestionItem]
+
+class RecalculateRequest(BaseModel):
+    changed_question_ids: List[str] = Field(default_factory=list)
+    syllabus: Syllabus
+    questions: List[QuestionItem]
+    pyqs: Optional[List[PreviousYearQuestion]] = None
+    paper_title: Optional[str] = "Draft Examination Paper"
+
+class HealthResponse(BaseModel):
+    status: str
+    app: str
+    version: str
+    environment: Optional[str] = "development"
+    debug: bool = False
+
+# --- AI Engine Models (Phase 2) ---
+
+class AIRewriteRequest(BaseModel):
+    question_text: str
+    current_blooms_level: Optional[str] = "Understand"
+    target_blooms_level: Optional[str] = "Apply"
+    issue_reason: Optional[str] = None
+    syllabus_context: Optional[str] = None
+    marks: Optional[float] = 10.0
+
+class AIRewriteResponse(BaseModel):
+    original_question: str
+    rewritten_question: str
+    target_blooms_level: str
+    command_verb: str
+    mapped_unit: Optional[int] = None
+    pedagogical_rationale: str
+    is_ai_generated: bool = True
+
+class CandidateQuestion(BaseModel):
+    question_text: str
+    command_verb: str
+    blooms_level: str
+    marks: float
+    sample_solution_outline: Optional[str] = None
+
+class AIGenerateQuestionRequest(BaseModel):
+    course_name: str
+    course_code: str
+    unit_number: int
+    unit_title: str
+    unit_topics: List[str]
+    target_blooms_level: Optional[str] = "Apply"
+    marks: float = 10.0
+    difficulty: Optional[str] = "Medium"
+
+class AIGenerateQuestionResponse(BaseModel):
+    unit_number: int
+    unit_title: str
+    candidates: List[CandidateQuestion]
+    is_ai_generated: bool = True
+
+class AIModerationSummaryRequest(BaseModel):
+    report: AuditReport
+
+class AIModerationSummaryResponse(BaseModel):
+    accreditation_summary: str
+    key_strengths: List[str]
+    urgent_action_items: List[str]
+    nba_abet_readiness: str  # e.g., "Accreditation Ready", "Conditional Approval", "Requires Restructuring"
+    is_ai_generated: bool = True

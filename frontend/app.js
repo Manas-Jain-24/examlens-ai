@@ -3,8 +3,20 @@
 let currentAuditReport = null;
 let currentSyllabus = null;
 let currentPyqs = [];
+const changedQuestionIds = new Set();
 let bloomsChartInstance = null;
 let marksChartInstance = null;
+
+// Every value originating from a document upload or an AI response must be
+// escaped before it is interpolated into an HTML template.
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
@@ -95,18 +107,9 @@ async function loadDemoAudit() {
     const report = await res.json();
     currentAuditReport = report;
     
-    // Store syllabus skeleton for recalculations
-    currentSyllabus = {
-      course_name: report.syllabus_summary.course_name,
-      course_code: report.syllabus_summary.course_code,
-      units: report.unit_coverage.map(u => ({
-        unit_number: u.unit_number,
-        title: u.unit_title,
-        topics: [`Topic overview for Unit ${u.unit_number}`],
-        learning_outcomes: [`Outcome for Unit ${u.unit_number}`],
-        recommended_weightage_percent: u.expected_weightage_percent
-      }))
-    };
+    currentSyllabus = report.syllabus;
+    currentPyqs = report.pyqs || [];
+    changedQuestionIds.clear();
 
     renderDashboard(report);
   } catch (err) {
@@ -152,22 +155,14 @@ async function handleFormAudit() {
     });
     if (!res.ok) {
       const errData = await res.json();
-      throw new Error(errData.detail || `Server error ${res.status}`);
+      throw new Error(errData.message || errData.detail || `Server error ${res.status}`);
     }
     const report = await res.json();
     currentAuditReport = report;
     
-    currentSyllabus = {
-      course_name: report.syllabus_summary.course_name,
-      course_code: report.syllabus_summary.course_code,
-      units: report.unit_coverage.map(u => ({
-        unit_number: u.unit_number,
-        title: u.unit_title,
-        topics: [`Topics in Unit ${u.unit_number}`],
-        learning_outcomes: [],
-        recommended_weightage_percent: u.expected_weightage_percent
-      }))
-    };
+    currentSyllabus = report.syllabus;
+    currentPyqs = report.pyqs || [];
+    changedQuestionIds.clear();
 
     renderDashboard(report);
   } catch (err) {
@@ -178,33 +173,30 @@ async function handleFormAudit() {
 }
 
 // Recalculate with Faculty Overrides
-async function recalculateFromTable() {
-  if (!currentAuditReport || !currentSyllabus) return;
-
+function collectTableOverrides() {
   const rows = document.querySelectorAll('#questions-table-body tr');
-  const updatedQuestions = [];
-
-  rows.forEach((row, idx) => {
-    const origQ = currentAuditReport.mapped_questions[idx];
-    const unitSelect = row.querySelector('.select-unit');
-    const bloomsSelect = row.querySelector('.select-blooms');
-
-    const newUnit = parseInt(unitSelect.value, 10);
-    const newBlooms = bloomsSelect.value;
-
-    updatedQuestions.push({
-      ...origQ,
-      mapped_unit: newUnit,
-      blooms_level: newBlooms
-    });
+  currentAuditReport.mapped_questions = currentAuditReport.mapped_questions.map((q, idx) => {
+    const row = rows[idx];
+    if (!row) return q;
+    return {
+      ...q,
+      mapped_unit: parseInt(row.querySelector('.select-unit').value, 10),
+      blooms_level: row.querySelector('.select-blooms').value
+    };
   });
+}
+
+async function recalculateFromTable(readTable = true) {
+  if (!currentAuditReport || !currentSyllabus) return;
+  if (readTable) collectTableOverrides();
 
   showLoading('Recalculating Exam Quality Score & Unit Coverage with faculty overrides...');
 
   try {
     const payload = {
       syllabus: currentSyllabus,
-      questions: updatedQuestions,
+      questions: currentAuditReport.mapped_questions,
+      changed_question_ids: [...changedQuestionIds],
       pyqs: currentPyqs,
       paper_title: currentAuditReport.paper_summary.paper_title
     };
@@ -218,6 +210,7 @@ async function recalculateFromTable() {
     if (!res.ok) throw new Error('Recalculation failed');
     const newReport = await res.json();
     currentAuditReport = newReport;
+    changedQuestionIds.clear();
     renderDashboard(newReport);
   } catch (err) {
     alert('Error recalculating score: ' + err.message);
@@ -228,13 +221,16 @@ async function recalculateFromTable() {
 
 // Render Entire Dashboard
 function renderDashboard(report) {
-  // Show PDF Export button
+  // Show PDF Export and AI Summary buttons
   document.getElementById('btn-export-pdf').style.display = 'inline-flex';
+  const aiSummaryBtn = document.getElementById('btn-ai-summary');
+  if (aiSummaryBtn) aiSummaryBtn.style.display = 'inline-flex';
+
 
   // 1. Header Information
   document.getElementById('disp-course-code').textContent = report.syllabus_summary.course_code || 'COURSE';
   document.getElementById('disp-course-name').textContent = report.syllabus_summary.course_name || 'Course Examination';
-  document.getElementById('disp-paper-title').innerHTML = `<i class="fa-regular fa-file-lines"></i> ${report.paper_summary.paper_title || 'Draft Examination Paper'}`;
+  document.getElementById('disp-paper-title').innerHTML = `<i class="fa-regular fa-file-lines"></i> ${escapeHtml(report.paper_summary.paper_title || 'Draft Examination Paper')}`;
   document.getElementById('disp-total-marks').textContent = `${report.paper_summary.total_marks || 100} M`;
   document.getElementById('disp-total-questions').textContent = `${report.paper_summary.total_questions || 0} Items`;
   document.getElementById('disp-coverage-ratio').textContent = `${report.paper_summary.covered_units || 0} / ${report.syllabus_summary.total_units || 0} Units`;
@@ -434,6 +430,13 @@ function renderUnitCoverageMatrix(unitStats) {
       badgeHtml = '<span class="badge badge-info"><i class="fa-solid fa-arrow-trend-down"></i> Underrepresented</span>';
     }
 
+    const showAiGen = (u.coverage_status === 'Not Assessed' || u.coverage_status === 'Underrepresented');
+    const aiGenBtn = showAiGen ? `
+      <button class="btn btn-xs btn-outline-ai" onclick="openAIGapFiller(${u.unit_number})">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> AI Generate Question
+      </button>
+    ` : '';
+
     return `
       <div class="unit-card ${statusClass}">
         <div>
@@ -441,15 +444,17 @@ function renderUnitCoverageMatrix(unitStats) {
             <span class="unit-tag">UNIT ${u.unit_number}</span>
             ${badgeHtml}
           </div>
-          <h4>${u.unit_title}</h4>
+          <h4>${escapeHtml(u.unit_title)}</h4>
         </div>
         <div class="unit-card-stats">
           <span>Questions: <strong>${u.questions_count}</strong></span>
           <span>Marks: <strong>${u.total_marks}M (${u.marks_percentage}%)</strong></span>
           <span>Exp: <strong>${u.expected_weightage_percent}%</strong></span>
         </div>
+        ${aiGenBtn}
       </div>
     `;
+
   }).join('');
 }
 
@@ -486,15 +491,15 @@ function filterFindings(categoryFilter) {
       <div class="finding-item ${sevClass}">
         <div class="finding-header">
           <div class="finding-title-group">
-            <span class="badge ${badgeSevClass}">${f.severity}</span>
-            <span class="finding-category-tag">${f.category}</span>
-            <h4>${f.title}</h4>
+            <span class="badge ${badgeSevClass}">${escapeHtml(f.severity)}</span>
+            <span class="finding-category-tag">${escapeHtml(f.category)}</span>
+            <h4>${escapeHtml(f.title)}</h4>
           </div>
         </div>
-        <p class="finding-msg">${f.message}</p>
+        <p class="finding-msg">${escapeHtml(f.message)}</p>
         <div class="finding-action">
           <i class="fa-solid fa-bullseye" style="color: var(--primary-light); margin-right: 6px;"></i>
-          <strong>Recommended Action:</strong> ${f.recommended_action}
+          <strong>Recommended Action:</strong> ${escapeHtml(f.recommended_action)}
         </div>
       </div>
     `;
@@ -508,7 +513,7 @@ function renderQuestionsTable(questions, unitCoverage) {
   tbody.innerHTML = questions.map((q, idx) => {
     // Unit select options
     const unitOptions = unitCoverage.map(u => 
-      `<option value="${u.unit_number}" ${q.mapped_unit === u.unit_number ? 'selected' : ''}>Unit ${u.unit_number}: ${u.unit_title.substring(0, 24)}...</option>`
+      `<option value="${u.unit_number}" ${q.mapped_unit === u.unit_number ? 'selected' : ''}>Unit ${u.unit_number}: ${escapeHtml(u.unit_title.substring(0, 24))}...</option>`
     ).join('');
 
     // Blooms select options
@@ -525,21 +530,21 @@ function renderQuestionsTable(questions, unitCoverage) {
     // Alerts
     let alertsHtml = '<span style="color: var(--text-dim); font-size: 0.75rem;">None</span>';
     if (q.is_out_of_syllabus) {
-      alertsHtml = `<span class="badge badge-danger" title="${q.out_of_syllabus_reason || 'Out of syllabus'}"><i class="fa-solid fa-triangle-exclamation"></i> Out-of-Syllabus</span>`;
+      alertsHtml = `<span class="badge badge-danger" title="${escapeHtml(q.out_of_syllabus_reason || 'Out of syllabus')}"><i class="fa-solid fa-triangle-exclamation"></i> Out-of-Syllabus</span>`;
     } else if (q.pyq_similarity && q.pyq_similarity >= 0.70) {
       const matchPct = Math.round(q.pyq_similarity * 100);
-      alertsHtml = `<span class="badge badge-warning" title="${q.pyq_matched_question || ''}"><i class="fa-solid fa-copy"></i> ${matchPct}% Repeat</span>`;
+      alertsHtml = `<span class="badge badge-warning" title="${escapeHtml(q.pyq_matched_question || '')}"><i class="fa-solid fa-copy"></i> ${matchPct}% Repeat</span>`;
     }
 
     return `
       <tr data-index="${idx}">
-        <td><span class="q-id-pill">${q.question_id}</span></td>
-        <td><span style="font-size: 0.75rem; color: var(--text-dim);">${q.section || 'Part A'}</span></td>
+        <td><span class="q-id-pill">${escapeHtml(q.question_id)}</span></td>
+        <td><span style="font-size: 0.75rem; color: var(--text-dim);">${escapeHtml(q.section || 'Part A')}</span></td>
         <td>
-          <div class="q-statement">${q.question_text}</div>
+          <div class="q-statement">${escapeHtml(q.question_text)}</div>
           <div class="q-subinfo">
-            <span>Type: ${q.question_type || 'Descriptive'}</span>
-            ${q.command_verb ? ` • Verb: <em style="color: var(--primary-light);">${q.command_verb}</em>` : ''}
+            <span>Type: ${escapeHtml(q.question_type || 'Descriptive')}</span>
+            ${q.command_verb ? ` • Verb: <em style="color: var(--primary-light);">${escapeHtml(q.command_verb)}</em>` : ''}
           </div>
         </td>
         <td><span class="marks-badge">${q.marks}M</span></td>
@@ -557,8 +562,14 @@ function renderQuestionsTable(questions, unitCoverage) {
           <span class="conf-pill ${confClass}">${Math.round(confVal * 100)}%</span>
         </td>
         <td>${alertsHtml}</td>
+        <td>
+          <button class="btn btn-xs btn-ai-rewrite" onclick="openAIRewriter(${idx})">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> AI Rewrite
+          </button>
+        </td>
       </tr>
     `;
+
   }).join('');
 }
 
@@ -594,3 +605,265 @@ async function exportPdfReport() {
     hideLoading();
   }
 }
+
+// ============================================================================
+// Phase 2: Gemini AI Integration Frontend Handlers
+// ============================================================================
+
+let activeRewriteIndex = null;
+let activeGenerateUnit = null;
+let generatedCandidates = [];
+
+// --- 1. AI Question Rewriter ---
+function openAIRewriter(idx) {
+  if (!currentAuditReport || !currentAuditReport.mapped_questions) return;
+  activeRewriteIndex = idx;
+  const q = currentAuditReport.mapped_questions[idx];
+
+  document.getElementById('rewrite-orig-text').textContent = q.question_text;
+  document.getElementById('rewrite-orig-blooms').textContent = `Current: ${q.blooms_level || 'Understand'}`;
+
+  const issueBadge = document.getElementById('rewrite-orig-issue');
+  if (q.is_out_of_syllabus) {
+    issueBadge.textContent = 'Issue: Out-of-Syllabus';
+    issueBadge.className = 'badge badge-danger';
+  } else if (q.pyq_similarity && q.pyq_similarity >= 0.70) {
+    issueBadge.textContent = `Issue: ${Math.round(q.pyq_similarity * 100)}% Past Repeat`;
+    issueBadge.className = 'badge badge-warning';
+  } else if (q.blooms_level === 'Remember') {
+    issueBadge.textContent = 'Issue: Rote Recall Bias';
+    issueBadge.className = 'badge badge-warning';
+  } else {
+    issueBadge.textContent = 'Objective: Cognitive Elevation';
+    issueBadge.className = 'badge badge-info';
+  }
+
+  // Preselect a higher target
+  const targetSelect = document.getElementById('select-target-blooms');
+  targetSelect.value = q.blooms_level === 'Remember' ? 'Apply' : (q.blooms_level === 'Apply' ? 'Analyze' : 'Evaluate');
+
+  document.getElementById('ai-rewrite-output-container').classList.add('hidden');
+  document.getElementById('ai-rewrite-modal').classList.remove('hidden');
+}
+
+async function runAIRewrite() {
+  if (activeRewriteIndex === null) return;
+  const q = currentAuditReport.mapped_questions[activeRewriteIndex];
+  const targetBlooms = document.getElementById('select-target-blooms').value;
+
+  const btn = document.getElementById('btn-run-ai-rewrite');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating...';
+
+  try {
+    const payload = {
+      question_text: q.question_text,
+      current_blooms_level: q.blooms_level || 'Understand',
+      target_blooms_level: targetBlooms,
+      issue_reason: q.out_of_syllabus_reason || (q.is_out_of_syllabus ? 'Out of syllabus' : 'Elevate cognitive level'),
+      syllabus_context: currentSyllabus ? currentSyllabus.course_name : '',
+      marks: q.marks || 10.0
+    };
+
+    const res = await fetch('/api/ai/rewrite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) throw new Error('AI Rewrite request failed');
+    const data = await res.json();
+
+    document.getElementById('rewrite-result-text').value = data.rewritten_question;
+    document.getElementById('rewrite-rationale-text').textContent = data.pedagogical_rationale;
+    document.getElementById('rewrite-engine-badge').textContent = data.is_ai_generated ? 'Gemini 3.8 Flash' : 'Smart Heuristic Engine';
+
+    document.getElementById('ai-rewrite-output-container').classList.remove('hidden');
+  } catch (err) {
+    alert('AI Rewrite error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Generate AI Rewrite';
+  }
+}
+
+async function applyAIRewrite() {
+  if (activeRewriteIndex === null) return;
+  const newText = document.getElementById('rewrite-result-text').value.trim();
+  const targetBlooms = document.getElementById('select-target-blooms').value;
+
+  if (!newText) {
+    alert('Please generate or enter a rewritten question.');
+    return;
+  }
+
+  collectTableOverrides();
+  // The server will audit the new text before assigning fresh annotations.
+  const q = currentAuditReport.mapped_questions[activeRewriteIndex];
+  q.question_text = newText;
+  q.blooms_level = targetBlooms;
+  changedQuestionIds.add(q.question_id);
+
+  // Close modal
+  document.getElementById('ai-rewrite-modal').classList.add('hidden');
+
+  // Trigger recalculation with overrides
+  await recalculateFromTable(false);
+}
+
+// --- 2. AI Unit Gap Filler ---
+function openAIGapFiller(unitNumber) {
+  if (!currentSyllabus || !currentSyllabus.units) return;
+  const unit = currentSyllabus.units.find(u => u.unit_number === unitNumber);
+  if (!unit) return;
+
+  activeGenerateUnit = unit;
+  document.getElementById('gen-unit-title').textContent = `Unit ${unit.unit_number}: ${unit.title}`;
+  document.getElementById('gen-unit-topics').textContent = `Prescribed Topics: ${unit.topics.join(' • ')}`;
+  document.getElementById('gen-candidates-container').classList.add('hidden');
+  document.getElementById('gen-candidates-container').innerHTML = '';
+  document.getElementById('ai-generate-modal').classList.remove('hidden');
+}
+
+async function runAIGenerateQuestions() {
+  if (!activeGenerateUnit) return;
+  const targetBlooms = document.getElementById('gen-target-blooms').value;
+  const marks = parseFloat(document.getElementById('gen-target-marks').value);
+
+  const btn = document.getElementById('btn-run-ai-generate');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating Questions...';
+
+  try {
+    const payload = {
+      course_name: currentSyllabus.course_name,
+      course_code: currentSyllabus.course_code,
+      unit_number: activeGenerateUnit.unit_number,
+      unit_title: activeGenerateUnit.title,
+      unit_topics: activeGenerateUnit.topics,
+      target_blooms_level: targetBlooms,
+      marks: marks,
+      difficulty: 'Medium'
+    };
+
+    const res = await fetch('/api/ai/generate-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) throw new Error('Question generation failed');
+    const data = await res.json();
+    generatedCandidates = data.candidates || [];
+
+    const container = document.getElementById('gen-candidates-container');
+    container.innerHTML = generatedCandidates.map((c, i) => `
+      <div class="candidate-card">
+        <div class="candidate-header">
+          <div>
+            <span class="badge badge-info">${escapeHtml(c.blooms_level)}</span>
+            <span class="marks-badge" style="margin-left: 6px;">${c.marks}M</span>
+          </div>
+          <button class="btn btn-xs btn-success" onclick="addGeneratedQuestionToPaper(${i})">
+            <i class="fa-solid fa-plus"></i> Add to Exam Paper
+          </button>
+        </div>
+        <div class="candidate-statement">${escapeHtml(c.question_text)}</div>
+        ${c.sample_solution_outline ? `<div class="candidate-solution"><strong>Rubric:</strong> ${escapeHtml(c.sample_solution_outline)}</div>` : ''}
+      </div>
+    `).join('');
+
+    container.classList.remove('hidden');
+  } catch (err) {
+    alert('AI Generation error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Questions';
+  }
+}
+
+async function addGeneratedQuestionToPaper(candIndex) {
+  if (!activeGenerateUnit || !generatedCandidates[candIndex]) return;
+  const candidate = generatedCandidates[candIndex];
+
+  collectTableOverrides();
+  const usedIds = new Set(currentAuditReport.mapped_questions.map(q => q.question_id));
+  let nextId = currentAuditReport.mapped_questions.length + 1;
+  while (usedIds.has(`Q${nextId}`)) nextId++;
+  const newQId = `Q${nextId}`;
+  const newQuestion = {
+    question_id: newQId,
+    section: 'Part B',
+    question_text: candidate.question_text,
+    marks: candidate.marks,
+    question_type: 'Descriptive',
+    command_verb: candidate.command_verb,
+    mapped_unit: activeGenerateUnit.unit_number,
+    mapped_outcomes: activeGenerateUnit.learning_outcomes || [],
+    blooms_level: candidate.blooms_level,
+    mapping_confidence: 0.0,
+    is_out_of_syllabus: false,
+    out_of_syllabus_reason: null,
+    pyq_similarity: 0.0,
+    pyq_matched_question: null
+  };
+
+  currentAuditReport.mapped_questions.push(newQuestion);
+  changedQuestionIds.add(newQId);
+  document.getElementById('ai-generate-modal').classList.add('hidden');
+
+  // Trigger recalculation to reflect the filled unit in charts and scores
+  await recalculateFromTable(false);
+}
+
+// --- 3. AI Accreditation Executive Summary ---
+async function openAIModerationSummary() {
+  if (!currentAuditReport) return;
+  const modal = document.getElementById('ai-summary-modal');
+  modal.classList.remove('hidden');
+
+  const narrativeElem = document.getElementById('summary-narrative');
+  narrativeElem.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating accreditation intelligence note...';
+
+  try {
+    const res = await fetch('/api/ai/moderation-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ report: currentAuditReport })
+    });
+
+    if (!res.ok) throw new Error('Failed to generate summary');
+    const data = await res.json();
+
+    document.getElementById('summary-readiness-badge').textContent = data.nba_abet_readiness;
+    narrativeElem.textContent = data.accreditation_summary;
+
+    const strengthsList = document.getElementById('summary-strengths-list');
+    strengthsList.innerHTML = (data.key_strengths || []).map(s => `<li>${escapeHtml(s)}</li>`).join('');
+
+    const actionsList = document.getElementById('summary-actions-list');
+    actionsList.innerHTML = (data.urgent_action_items || []).map(a => `<li>${escapeHtml(a)}</li>`).join('');
+  } catch (err) {
+    narrativeElem.textContent = 'Error generating accreditation summary: ' + err.message;
+  }
+}
+
+// Wire up event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Modal close handlers
+  document.getElementById('btn-close-rewrite')?.addEventListener('click', () => {
+    document.getElementById('ai-rewrite-modal').classList.add('hidden');
+  });
+  document.getElementById('btn-close-generate')?.addEventListener('click', () => {
+    document.getElementById('ai-generate-modal').classList.add('hidden');
+  });
+  document.getElementById('btn-close-summary')?.addEventListener('click', () => {
+    document.getElementById('ai-summary-modal').classList.add('hidden');
+  });
+
+  // Action button clicks
+  document.getElementById('btn-run-ai-rewrite')?.addEventListener('click', runAIRewrite);
+  document.getElementById('btn-apply-rewrite')?.addEventListener('click', applyAIRewrite);
+  document.getElementById('btn-run-ai-generate')?.addEventListener('click', runAIGenerateQuestions);
+  document.getElementById('btn-ai-summary')?.addEventListener('click', openAIModerationSummary);
+});

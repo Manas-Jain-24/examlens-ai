@@ -262,6 +262,8 @@ class ExamAuditor:
             verdict = "Paper fails several assessment-quality benchmarks. Major restructuring of units and questions required."
 
         return AuditReport(
+            syllabus=self.syllabus,
+            pyqs=self.pyqs,
             overall_quality_score=overall_score,
             grade=grade,
             verdict_summary=verdict,
