@@ -56,6 +56,7 @@
       <h2>Review workspace</h2>
       <p id="workspace-status" role="status">Load a paper to begin.</p>
       <p id="choice-summary"></p>
+      <p id="service-status" role="status"></p>
       <div class="workspace-actions">
         <button id="btn-edit-documents" class="btn btn-secondary">Review documents & rules</button>
         <label>Audit title <input id="history-title" placeholder="e.g. CS201 final exam"></label>
@@ -64,7 +65,11 @@
         <button id="btn-save-copy" class="btn btn-secondary">Save as new audit</button>
         <button id="btn-open-history" class="btn btn-secondary">Audit history</button>
         <button id="btn-open-evaluation" class="btn btn-secondary">Evaluate accuracy</button>
+        <button id="btn-export-backup" class="btn btn-secondary">Export saved data</button>
+        <button id="btn-restore-backup" class="btn btn-secondary">Restore backup as copies</button>
+        <input id="backup-file" type="file" accept=".json,application/json" hidden aria-label="Choose ExamLens backup">
       </div>
+      <p id="backup-status" role="status"></p>
     </section>
 
     <section id="review-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="review-heading">
@@ -108,6 +113,7 @@
           <div class="workspace-actions"><select id="evaluation-example" aria-label="Evaluation example"></select><button id="btn-new-example" class="btn btn-secondary">New example</button><button id="btn-run-evaluation" class="btn btn-primary">Evaluate reviewed examples</button><button id="btn-smoke-evaluation" class="btn btn-secondary">Run draft smoke check</button><button id="btn-export-examples" class="btn btn-secondary">Export dataset</button></div>
           <div id="evaluation-results" role="status"></div>
           <div class="editor-grid"><label>Example ID<input id="eval-id"></label><label>Reviewer (blank = draft)<input id="eval-reviewer"></label><label>Expected question count<input id="eval-count" type="number" min="1"></label><label>Expected printed marks<input id="eval-marks" type="number" min="0.1" step="0.1"></label></div>
+          <div class="editor-grid"><label>Expected attempt marks (optional)<input id="eval-attempt-marks" type="number" min="0.1" step="any"></label><label>Expected choice group count (optional)<input id="eval-choices" type="number" min="0" step="1"></label></div>
           <label>Syllabus source<textarea id="eval-syllabus" rows="7"></textarea></label><label>Question paper source<textarea id="eval-paper" rows="7"></textarea></label>
           <h3>Reference labels</h3><div id="evaluation-labels"></div><button id="btn-add-label" class="btn btn-secondary">Add reference label</button><button id="btn-save-example" class="btn btn-primary">Save example & review attribution</button>
           <p id="evaluation-error" class="inline-error" role="alert"></p>
@@ -385,7 +391,7 @@
           <div id="ai-rewrite-output-container" class="ai-output-box hidden">
             <div class="output-header">
               <span class="badge badge-success"><i class="fa-solid fa-check"></i> Recommended AI Revision</span>
-              <span id="rewrite-engine-badge" class="badge-engine">Gemini 3.8 Flash</span>
+              <span id="rewrite-engine-badge" class="badge-engine">Provider status</span>
             </div>
             <textarea id="rewrite-result-text" class="rewrite-textarea" rows="4"></textarea>
             <div class="rationale-box">
@@ -408,7 +414,7 @@
         <div class="modal-header">
           <div>
             <h2><i class="fa-solid fa-puzzle-piece"></i> AI Syllabus Gap Filler & Question Generator</h2>
-            <p>Generate balanced, accredited examination questions for unassessed or underrepresented units.</p>
+            <p>Draft candidate questions for faculty review in unassessed or underrepresented units.</p>
           </div>
           <button id="btn-close-generate" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
         </div>
@@ -441,6 +447,7 @@
           </div>
 
           <!-- Candidates Container -->
+          <p id="generation-engine-status" role="status"></p>
           <div id="gen-candidates-container" class="candidates-list hidden">
             <!-- Dynamically populated candidate cards -->
           </div>
@@ -467,6 +474,7 @@
           <div class="summary-section">
             <h4><i class="fa-solid fa-file-contract"></i> Executive Assessment</h4>
             <p id="summary-narrative" class="summary-text"></p>
+            <p id="summary-engine-status" role="status"></p>
           </div>
 
           <div class="summary-grid">

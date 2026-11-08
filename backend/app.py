@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from backend.core.config import settings
 from backend.core.logger import logger
 from backend.core.exceptions import register_exception_handlers
-from backend.api.routers import health, demo, audit, reports, ai_suggest, drafts, history, evaluation
+from backend.api.routers import health, demo, audit, reports, ai_suggest, drafts, history, evaluation, backups
 
 def create_app() -> FastAPI:
     """Application factory for ExamLens AI backend."""
@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(drafts.router, prefix=settings.API_PREFIX)
     app.include_router(history.router, prefix=settings.API_PREFIX)
     app.include_router(evaluation.router, prefix=settings.API_PREFIX)
+    app.include_router(backups.router, prefix=settings.API_PREFIX)
 
 
     # 4. Mount frontend static assets

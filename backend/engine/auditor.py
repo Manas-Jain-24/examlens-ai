@@ -5,7 +5,7 @@ from backend.models import (
     AuditReport, AuditFinding, UnitCoverageStat,
     BloomsDistributionStat, ScoreBreakdown, QuestionItem, AuditRules
 )
-from backend.engine.choices import choice_accounting, expected_outcome_coverage
+from backend.engine.choices import choice_accounting, expected_outcome_coverage, allocated_marks
 from backend.engine.semantic_mapper import SemanticMapper
 from backend.engine.blooms_classifier import classify_blooms_taxonomy, BLOOMS_ORDER
 from backend.engine.similarity_detector import SimilarityDetector
@@ -65,7 +65,7 @@ class ExamAuditor:
         expected_los, total_syllabus_los = expected_outcome_coverage(self.paper, self.syllabus)
 
         for unit in self.syllabus.units:
-            unit_qs = [q for q in self.paper.questions if q.mapped_unit == unit.unit_number]
+            unit_qs = [q for q in self.paper.questions if allocated_marks(q, unit.unit_number) > 0]
             _, unit_marks, guaranteed, possible = choice_accounting(self.paper, unit.unit_number)
             if guaranteed > 0:
                 guaranteed_units += 1
@@ -280,7 +280,7 @@ class ExamAuditor:
             },
             paper_summary={
                 'printed_marks': sum(q.marks for q in self.paper.questions),
-                'scoring_version': '2.0',
+                'scoring_version': '2.1',
                 'minimum_attempt_marks': min_marks,
                 'maximum_attempt_marks': max_marks,
                 'guaranteed_units': guaranteed_units,

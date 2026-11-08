@@ -1,5 +1,6 @@
 import json
 import re
+from httpx import TimeoutException
 from typing import Optional, List
 from google import genai
 from google.genai import types
@@ -13,28 +14,53 @@ from backend.models import (
 )
 
 class GeminiService:
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or settings.GEMINI_API_KEY
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
+        self.api_key = settings.GEMINI_API_KEY if api_key is None else api_key
         self.client = None
-        self.model_name = "gemini-3.8-flash"
+        self.model_name = settings.GEMINI_MODEL if model_name is None else model_name
+        self.configuration_reason = 'no_api_key' if not self.api_key.strip() else 'model_not_configured'
 
-        if self.api_key and self.api_key.strip():
+        if self.api_key.strip() and self.model_name.strip():
             try:
-                self.client = genai.Client(api_key=self.api_key.strip())
+                self.client = genai.Client(api_key=self.api_key.strip(), http_options=types.HttpOptions(
+                    timeout=int(settings.AI_TIMEOUT_SECONDS * 1000),
+                    retry_options=types.HttpRetryOptions(attempts=1)))
+                self.configuration_reason = None
                 logger.info("GeminiService initialized with Google Gemini API Client.")
             except Exception as e:
-                logger.warning(f"Failed to initialize Gemini Client: {e}. Falling back to heuristic engine.")
+                self.configuration_reason = 'client_initialization_failed'
+                logger.warning('Could not initialize Gemini client; using templates (%s).', type(e).__name__)
         else:
-            logger.info("No GEMINI_API_KEY detected. Running in heuristic/deterministic fallback mode.")
+            logger.info('Gemini not configured (%s). Using deterministic templates.', self.configuration_reason)
 
     def is_live_ai_available(self) -> bool:
         return self.client is not None
+
+    def _request_json(self, prompt, temperature, required_fields):
+        response = self.client.models.generate_content(model=self.model_name, contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type='application/json', temperature=temperature))
+        data = json.loads(response.text or '')
+        if not isinstance(data, dict) or not data:
+            raise ValueError('Provider must return a nonempty JSON object.')
+        if any(key not in data for key in required_fields):
+            raise ValueError('Provider response is missing required fields.')
+        return data
+
+    def _fallback(self, result, reason):
+        result.engine = 'heuristic'
+        result.model_name = None
+        result.fallback_reason = reason
+        return result
+
+    def _failure_reason(self, error):
+        return 'provider_timeout' if isinstance(error, (TimeoutError, TimeoutException)) else 'provider_error_or_invalid_response'
 
     def rewrite_question(self, req: AIRewriteRequest) -> AIRewriteResponse:
         """
         Rewrites a problematic exam question to elevate its Bloom's cognitive level,
         resolve out-of-syllabus flaws, or prevent PYQ memorization.
         """
+        reason = self.configuration_reason or 'provider_unavailable'
         if self.client:
             try:
                 prompt = f"""
@@ -71,38 +97,31 @@ Requirements:
   "pedagogical_rationale": "2-3 sentences explaining why this rewrite improves assessment quality"
 }}
 """
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.4
-                    )
-                )
-
-                if response.text:
-                    data = json.loads(response.text)
+                data = self._request_json(prompt, 0.4, ['rewritten_question', 'command_verb', 'pedagogical_rationale'])
+                if data:
                     return AIRewriteResponse(
                         original_question=req.question_text,
                         rewritten_question=data.get("rewritten_question", req.question_text),
-                        target_blooms_level=data.get("target_blooms_level", req.target_blooms_level or "Apply"),
+                        target_blooms_level=req.target_blooms_level or 'Apply',
                         command_verb=data.get("command_verb", "Apply"),
                         pedagogical_rationale=data.get(
                             "pedagogical_rationale",
                             "Revised to promote higher-order cognitive evaluation over rote memorization."
                         ),
-                        is_ai_generated=True
+                        is_ai_generated=True, engine='gemini', model_name=self.model_name
                     )
             except Exception as e:
-                logger.warning(f"Gemini live call failed in rewrite_question: {e}. Falling back to heuristic rewrite.")
+                reason = self._failure_reason(e)
+                logger.warning('Gemini rewrite unavailable (%s); using templates.', type(e).__name__)
 
         # --- Deterministic Heuristic Fallback ---
-        return self._heuristic_rewrite(req)
+        return self._fallback(self._heuristic_rewrite(req), reason)
 
     def generate_unit_questions(self, req: AIGenerateQuestionRequest) -> AIGenerateQuestionResponse:
         """
         Generates candidate examination questions for an unassessed or underrepresented unit.
         """
+        reason = self.configuration_reason or 'provider_unavailable'
         if self.client:
             try:
                 topics_str = ", ".join(req.unit_topics)
@@ -138,35 +157,30 @@ Requirements:
   ]
 }}
 """
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.5
-                    )
-                )
-
-                if response.text:
-                    data = json.loads(response.text)
+                data = self._request_json(prompt, 0.5, ['candidates'])
+                if data:
                     candidates = [CandidateQuestion(**c) for c in data.get("candidates", [])]
+                    if not candidates or any(c.blooms_level != req.target_blooms_level or abs(c.marks - req.marks) > 0.001 for c in candidates):
+                        raise ValueError('Generated candidates must match requested marks and cognitive level.')
                     if candidates:
                         return AIGenerateQuestionResponse(
                             unit_number=req.unit_number,
                             unit_title=req.unit_title,
                             candidates=candidates,
-                            is_ai_generated=True
+                            is_ai_generated=True, engine='gemini', model_name=self.model_name
                         )
             except Exception as e:
-                logger.warning(f"Gemini live call failed in generate_unit_questions: {e}. Using heuristic generation.")
+                reason = self._failure_reason(e)
+                logger.warning('Gemini generation unavailable (%s); using templates.', type(e).__name__)
 
         # --- Deterministic Heuristic Fallback ---
-        return self._heuristic_generate_questions(req)
+        return self._fallback(self._heuristic_generate_questions(req), reason)
 
     def generate_moderation_summary(self, report: AuditReport) -> AIModerationSummaryResponse:
         """
         Synthesizes an executive examination moderation note and accreditation compliance assessment.
         """
+        reason = self.configuration_reason or 'provider_unavailable'
         if self.client:
             try:
                 summary_data = {
@@ -179,8 +193,9 @@ Requirements:
                 }
 
                 prompt = f"""
-You are the Chairman of an Academic Examination Moderation Board reviewing a draft examination paper against NBA / ABET accreditation standards.
-Synthesize an executive moderation review note based on this audit telemetry:
+You are assisting a faculty moderation board. Write an advisory review of the draft examination.
+Do not certify accreditation compliance or invent standards. This automated report is a review aid.
+Synthesize a moderation review note based on this audit telemetry:
 
 {json.dumps(summary_data, indent=2)}
 
@@ -189,116 +204,59 @@ Output strictly a JSON object matching this schema:
   "accreditation_summary": "3-4 paragraphs formal institutional assessment covering syllabus coverage, cognitive depth, and risk points",
   "key_strengths": ["list of 2-3 prominent strengths in this draft"],
   "urgent_action_items": ["list of 2-3 critical moderation actions required before paper approval"],
-  "nba_abet_readiness": "Accreditation Ready | Conditional Approval | Revision Required"
+  "nba_abet_readiness": "Faculty Review Suggested | Revisions Suggested | Revision Required"
 }}
 """
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.3
-                    )
-                )
-
-                if response.text:
-                    data = json.loads(response.text)
+                data = self._request_json(prompt, 0.3, ['accreditation_summary', 'key_strengths', 'urgent_action_items', 'nba_abet_readiness'])
+                if data:
                     return AIModerationSummaryResponse(
                         accreditation_summary=data.get("accreditation_summary", report.verdict_summary),
                         key_strengths=data.get("key_strengths", ["Syllabus units mapped"]),
                         urgent_action_items=data.get("urgent_action_items", ["Review flagged findings"]),
                         nba_abet_readiness=data.get("nba_abet_readiness", "Conditional Approval"),
-                        is_ai_generated=True
+                        is_ai_generated=True, engine='gemini', model_name=self.model_name
                     )
             except Exception as e:
-                logger.warning(f"Gemini live call failed in generate_moderation_summary: {e}. Using heuristic summary.")
+                reason = self._failure_reason(e)
+                logger.warning('Gemini summary unavailable (%s); using templates.', type(e).__name__)
 
         # --- Deterministic Heuristic Fallback ---
-        return self._heuristic_moderation_summary(report)
+        return self._fallback(self._heuristic_moderation_summary(report), reason)
 
     # ------------------------------------------------------------------
     # Deterministic Heuristic Fallback Methods
     # ------------------------------------------------------------------
 
+    def _template(self, concept, level):
+        return {
+            'Remember': ('State', f'State the key properties of {concept} and define the main terms.'),
+            'Understand': ('Explain', f'Explain {concept} with an example and identify its limitations.'),
+            'Apply': ('Apply', f'Apply {concept} to a concrete example. State assumptions and show each step of your solution.'),
+            'Analyze': ('Analyze', f'Analyze {concept} by comparing two approaches or cases. Explain the causes of their differences.'),
+            'Evaluate': ('Evaluate', f'Evaluate the suitability of {concept} for a scenario of your choice. Justify your criteria and conclusion.'),
+            'Create': ('Design', f'Design a solution or model using {concept}. State constraints and explain how you would validate it.'),
+        }[level]
+
     def _heuristic_rewrite(self, req: AIRewriteRequest) -> AIRewriteResponse:
-        text = req.question_text.strip()
-        target_lvl = req.target_blooms_level or "Apply"
-
-        # Extract concept by stripping leading verbs and punctuation
-        concept = re.sub(r'^(?:what\s+is|what\s+are|define|explain|discuss|describe|write\s+short\s+notes\s+on)\s+', '', text, flags=re.I).strip(" ?.")
-
-        if target_lvl == "Apply":
-            rewritten = (
-                f"Design and implement a solution utilizing {concept} to handle dynamically incoming data streams. "
-                f"Provide pseudo-code and trace the operation step-by-step. ({int(req.marks or 10)} Marks)"
-            )
-            verb = "Implement"
-            rationale = "Shifted question from passive definitions to algorithmic implementation and step-by-step trace."
-        elif target_lvl == "Analyze":
-            rewritten = (
-                f"Conduct an in-depth asymptotic analysis of {concept}. Compare its time and space complexity trade-offs "
-                f"against alternative linear or hierarchical structures under worst-case input conditions. ({int(req.marks or 10)} Marks)"
-            )
-            verb = "Analyze"
-            rationale = "Elevated cognitive demand to comparative asymptotic evaluation and worst-case trade-off analysis."
-        elif target_lvl == "Evaluate":
-            rewritten = (
-                f"Critique the suitability of {concept} in mission-critical applications with strict latency bounds. "
-                f"Justify your architectural choice with empirical performance metrics. ({int(req.marks or 10)} Marks)"
-            )
-            verb = "Justify"
-            rationale = "Requires students to defend design decisions and evaluate empirical constraints."
-        else:
-            rewritten = (
-                f"Develop an architectural design incorporating {concept} tailored for high-concurrency systems. "
-                f"Illustrate data flow and node transitions. ({int(req.marks or 10)} Marks)"
-            )
-            verb = "Design"
-            rationale = "Constructive synthesis problem requiring novel architectural design."
-
-        return AIRewriteResponse(
-            original_question=req.question_text,
-            rewritten_question=rewritten,
-            target_blooms_level=target_lvl,
-            command_verb=verb,
-            pedagogical_rationale=rationale,
-            is_ai_generated=False
-        )
+        concept = re.sub(r'^(?:what\s+is|what\s+are|define|explain|discuss|describe)\s+', '', req.question_text.strip(), flags=re.I)
+        concept = re.sub(r'[([]\s*\d+(?:\.\d+)?\s*marks?\s*[)\]]', '', concept, flags=re.I).strip(' ?.')
+        verb, statement = self._template(concept, req.target_blooms_level)
+        return AIRewriteResponse(original_question=req.question_text,
+            rewritten_question=f'{statement} ({req.marks:g} Marks)',
+            target_blooms_level=req.target_blooms_level, command_verb=verb,
+            pedagogical_rationale='Template suggestion for the requested cognitive level. Faculty must verify relevance, difficulty, and syllabus alignment.',
+            is_ai_generated=False)
 
     def _heuristic_generate_questions(self, req: AIGenerateQuestionRequest) -> AIGenerateQuestionResponse:
+        topics = req.unit_topics or [req.unit_title]
         candidates = []
-        topics = req.unit_topics or ["Core Principles", "Practical Implementation"]
-        t1 = topics[0] if len(topics) > 0 else "fundamental algorithms"
-        t2 = topics[1] if len(topics) > 1 else topics[0]
-
-        candidates.append(CandidateQuestion(
-            question_text=(
-                f"Analyze the performance of {t1} when applied to large-scale datasets. "
-                f"Derive its recurrence relation and prove its asymptotic time complexity bounds. ({int(req.marks)} Marks)"
-            ),
-            command_verb="Analyze",
-            blooms_level="Analyze",
-            marks=req.marks,
-            sample_solution_outline=f"Recurrence formulation (4M), asymptotic induction proof (3M), boundary case discussion (3M)."
-        ))
-
-        candidates.append(CandidateQuestion(
-            question_text=(
-                f"Design an optimized algorithm implementing {t2} under constrained memory conditions. "
-                f"Demonstrate how your approach avoids redundant operations with an annotated example. ({int(req.marks)} Marks)"
-            ),
-            command_verb="Design",
-            blooms_level="Apply",
-            marks=req.marks,
-            sample_solution_outline=f"Algorithmic design (4M), memory footprint analysis (3M), annotated trace (3M)."
-        ))
-
-        return AIGenerateQuestionResponse(
-            unit_number=req.unit_number,
-            unit_title=req.unit_title,
-            candidates=candidates,
-            is_ai_generated=False
-        )
+        for topic in (topics[0], topics[1] if len(topics) > 1 else topics[0]):
+            verb, statement = self._template(topic, req.target_blooms_level)
+            candidates.append(CandidateQuestion(question_text=f'{statement} ({req.marks:g} Marks)',
+                command_verb=verb, blooms_level=req.target_blooms_level, marks=req.marks,
+                sample_solution_outline=f'Conceptual correctness and reasoning ({req.marks * 0.6:g}M); supporting example and justification ({req.marks * 0.4:g}M). Faculty review required.'))
+        return AIGenerateQuestionResponse(unit_number=req.unit_number, unit_title=req.unit_title,
+            candidates=candidates, is_ai_generated=False)
 
     def _heuristic_moderation_summary(self, report: AuditReport) -> AIModerationSummaryResponse:
         score = report.overall_quality_score
@@ -325,14 +283,14 @@ Output strictly a JSON object matching this schema:
         if not actions:
             actions.append("Verify finalized mark allocations with respective course coordinators.")
 
-        readiness = "Accreditation Ready" if score >= 85 else ("Conditional Approval" if score >= 70 else "Revision Required")
+        readiness = 'Faculty Review Suggested' if score >= 85 else ('Revisions Suggested' if score >= 70 else 'Revision Required')
 
         summary_text = (
             f"The draft examination paper for {report.syllabus_summary.get('course_name', 'Course')} "
             f"({report.syllabus_summary.get('course_code', '')}) achieved an automated Examination Quality Score of "
             f"{score}/100, ranking it as '{report.grade}'. "
             f"The assessment exhibits {len(report.findings)} moderation advisory findings. "
-            f"Following standard NBA and ABET outcome-based education (OBE) guidelines, {readiness.lower()} status is assigned. "
+            f"This is a template-based moderation note, not an accreditation determination. "
             f"Moderation committee members should prioritize resolving all High-severity findings before formal publication."
         )
 

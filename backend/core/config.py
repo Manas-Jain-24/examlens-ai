@@ -41,7 +41,7 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 class Settings(BaseModel):
     PROJECT_NAME: str = "ExamLens AI"
-    VERSION: str = "1.0.0"
+    VERSION: str = "1.2.0"
     API_PREFIX: str = "/api"
     HOST: str = os.getenv("HOST", "127.0.0.1")
     PORT: int = int(os.getenv("PORT", "8000"))
@@ -51,6 +51,15 @@ class Settings(BaseModel):
     )
     MAX_UPLOAD_SIZE_MB: int = int(os.getenv("MAX_UPLOAD_SIZE_MB", "15"))
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv('GEMINI_MODEL', '').strip()
+    AI_TIMEOUT_SECONDS: float = Field(default=float(os.getenv('AI_TIMEOUT_SECONDS', '20')), gt=0, le=120)
+    OCR_ENABLED: bool = os.getenv('OCR_ENABLED', 'false').lower() in ('true', '1', 'yes')
+    OCR_LANGUAGE: str = os.getenv('OCR_LANGUAGE', 'eng')
+    TESSERACT_CMD: str = os.getenv('TESSERACT_CMD', 'tesseract')
+    PDF_RENDERER_CMD: str = os.getenv('PDF_RENDERER_CMD', 'pdftoppm')
+    OCR_TIMEOUT_SECONDS: float = Field(default=float(os.getenv('OCR_TIMEOUT_SECONDS', '60')), gt=0, le=300)
+    MAX_PDF_PAGES: int = Field(default=int(os.getenv('MAX_PDF_PAGES', '50')), ge=1, le=500)
+    MAX_BACKUP_SIZE_MB: int = Field(default=int(os.getenv('MAX_BACKUP_SIZE_MB', '50')), ge=1, le=250)
     HISTORY_DB_PATH: str = os.getenv('HISTORY_DB_PATH', os.path.join(BASE_DIR, '.data', 'examlens.sqlite3'))
 
     # Path mappings

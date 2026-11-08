@@ -7,10 +7,16 @@ from backend.models import QuestionPaper
 from math import comb
 
 
+def allocated_marks(question, unit):
+    if question.unit_allocations:
+        return question.unit_allocations.get(unit, 0.0)
+    return question.marks if question.mapped_unit == unit else 0.0
+
+
 def choice_accounting(paper: QuestionPaper, unit=None):
     weights = {q.question_id: 1.0 for q in paper.questions}
     grouped = {qid for g in paper.choice_groups for qid in g.question_ids}
-    values = {q.question_id: q.marks if unit is None or q.mapped_unit == unit else 0.0
+    values = {q.question_id: q.marks if unit is None else allocated_marks(q, unit)
               for q in paper.questions}
     minimum = maximum = sum(v for qid, v in values.items() if qid not in grouped)
     for group in paper.choice_groups:
@@ -29,7 +35,7 @@ def expected_outcome_coverage(paper, syllabus):
     approved = {(unit.unit_number, lo) for unit in syllabus.units for lo in unit.learning_outcomes}
     total = 0.0
     for number, outcome in approved:
-        mapped = {q.question_id for q in paper.questions if q.mapped_unit == number and outcome in q.mapped_outcomes}
+        mapped = {q.question_id for q in paper.questions if allocated_marks(q, number) > 0 and outcome in q.mapped_outcomes}
         if mapped - grouped:
             total += 1
             continue

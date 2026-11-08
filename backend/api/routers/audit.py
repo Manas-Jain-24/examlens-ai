@@ -15,7 +15,7 @@ from backend.engine.blooms_classifier import classify_blooms_taxonomy
 
 router = APIRouter(tags=["Audit"])
 
-async def _extract_content(file: Optional[UploadFile], text: Optional[str], field_name: str) -> str:
+async def _extract_content(file: Optional[UploadFile], text: Optional[str], field_name: str, diagnostics: Optional[dict] = None) -> str:
     """Helper to validate file sizes and extract clean text from either an upload or raw text."""
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
@@ -33,7 +33,11 @@ async def _extract_content(file: Optional[UploadFile], text: Optional[str], fiel
 
         if filename.lower().endswith(".pdf"):
             try:
-                extracted = extract_text_from_pdf(content)
+                from backend.engine.pdf_extraction import extract_pdf_document
+                result = extract_pdf_document(content)
+                extracted = result.text
+                if diagnostics is not None:
+                    diagnostics.update(warnings=result.warnings, pages=result.pages)
                 if not extracted.strip():
                     raise DocumentParsingError(f"No readable text could be extracted from {filename}. It may be scanned or image-only.")
                 return extracted
@@ -126,17 +130,23 @@ def recalculate_audit(req: RecalculateRequest):
             if q.mapped_unit not in units:
                 raise ValueError(f'{q.question_id}: choose an existing syllabus unit.')
             # Outcomes must belong to the faculty-selected unit.
-            q.mapped_outcomes = [lo for lo in q.mapped_outcomes if lo in units[q.mapped_unit].learning_outcomes]
+            allocated = list(q.unit_allocations) or [q.mapped_unit]
+            q.mapped_outcomes = [lo for lo in q.mapped_outcomes if any(lo in units[number].learning_outcomes for number in allocated)]
         logger.info(f"Recalculating audit with {len(req.questions)} questions ({total_marks} Marks)...")
         auditor = ExamAuditor(syllabus=req.syllabus, paper=paper, pyqs=req.pyqs or [], rules=req.rules)
         # A rewrite is a new question: re-check its alignment and cognitive level
         # rather than trusting the old question's annotations.
         changed = [q for q in req.questions if q.question_id in req.changed_question_ids]
+        for q in changed:
+            # Old mark splits are invalid evidence after a question is rewritten.
+            q.unit_allocations = {}
         auditor.mapper.map_questions(changed)
         for q in changed:
             q.blooms_level, q.command_verb, _ = classify_blooms_taxonomy(q.question_text)
             q.review_status = 'pending'
         report = auditor.recalculate_with_overrides(req.questions)
+        report.extraction_details = req.extraction_details
+        report.document_warnings = req.document_warnings
         logger.info(f"Recalculation complete: New Score = {report.overall_quality_score}")
         return report
 

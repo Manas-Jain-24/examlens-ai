@@ -17,7 +17,12 @@ def get_ai_status():
     return {
         "live_ai_available": live,
         "model": gemini_service.model_name if live else "deterministic_heuristic_fallback",
-        "has_api_key": bool(settings.GEMINI_API_KEY.strip())
+        "has_api_key": bool(settings.GEMINI_API_KEY.strip()),
+        'configured_model': gemini_service.model_name or None,
+        'provider_verified': False,
+        'state': 'configured_unverified' if live else 'template_fallback',
+        'fallback_reason': None if live else gemini_service.configuration_reason,
+        'request_timeout_seconds': settings.AI_TIMEOUT_SECONDS
     }
 
 @router.post("/rewrite", response_model=AIRewriteResponse)

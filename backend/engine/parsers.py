@@ -7,13 +7,8 @@ from backend.models import Syllabus, SyllabusUnit, QuestionPaper, QuestionItem, 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     """Extracts raw text from PDF bytes using pypdf."""
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    full_text = []
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            full_text.append(text)
-    return "\n".join(full_text)
+    from backend.engine.pdf_extraction import extract_pdf_document
+    return extract_pdf_document(pdf_bytes).text
 
 def parse_syllabus_text(text: str) -> Syllabus:
     """

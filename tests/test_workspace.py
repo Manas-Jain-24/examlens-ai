@@ -167,7 +167,7 @@ class TestWorkspace(unittest.TestCase):
         self.assertEqual(result['examples_evaluated'], 0)
         self.assertIsNone(result['unit_accuracy'])
         smoke = evaluate(seed_examples(), include_drafts=True)
-        self.assertEqual(smoke['examples_evaluated'], 3)
+        self.assertEqual(smoke['examples_evaluated'], len(seed_examples()))
         self.assertEqual(smoke['question_count_accuracy'], 1)
         self.assertEqual(smoke['printed_marks_accuracy'], 1)
         self.assertEqual(smoke['out_of_syllabus_recall'], 1)

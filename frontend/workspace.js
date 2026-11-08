@@ -56,7 +56,7 @@ function addUnit(unit = {}) {
   appendRow('review-units', `<div class="editor-grid">${editorInput('number', 'Unit number', unit.unit_number || rows('review-units').length + 1, 'number')}${editorInput('title', 'Unit title', unit.title)}${editorInput('weight', 'Expected marks (%)', unit.weight ?? 0, 'number')}</div>${editorText('topics', 'Topics (one per line)', (unit.topics || []).join('\n'))}${editorText('outcomes', 'Learning outcomes (one per line)', (unit.learning_outcomes || []).join('\n'))}`);
 }
 function addQuestion(q = {}) {
-  appendRow('review-questions', `<div class="editor-grid">${editorInput('id', 'Question ID', q.question_id || `Q${rows('review-questions').length + 1}`)}${editorInput('section', 'Section', q.section || 'General Section')}${editorInput('marks', 'Marks', q.marks ?? 10, 'number')}</div>${editorText('text', 'Question text', q.question_text)}`);
+  appendRow('review-questions', `<div class="editor-grid">${editorInput('id', 'Question ID', q.question_id || `Q${rows('review-questions').length + 1}`)}${editorInput('section', 'Section', q.section || 'General Section')}${editorInput('marks', 'Marks', q.marks ?? 10, 'number')}${editorInput('allocations', 'Unit:marks split (blank = automatic)', allocationText(q.unit_allocations))}</div>${editorText('text', 'Question text', q.question_text)}`);
 }
 function addChoice(group = {}) {
   appendRow('review-choices', `<div class="editor-grid">${editorInput('id', 'Group ID', group.group_id || `CHOICE${rows('review-choices').length + 1}`)}${editorInput('ids', 'Question IDs (comma-separated)', (group.question_ids || []).join(', '))}${editorInput('choose', 'How many must be attempted?', group.choose || 1, 'number')}</div>`);
@@ -100,7 +100,8 @@ function readReviewDraft() {
   draft.paper.course_code = draft.syllabus.course_code;
   draft.paper.questions = rows('review-questions').map(row => ({
     question_id: field(row, 'id').trim(), section: field(row, 'section').trim(),
-    marks: Number(field(row, 'marks')), question_text: field(row, 'text').trim()
+    marks: Number(field(row, 'marks')), question_text: field(row, 'text').trim(),
+    unit_allocations: parseUnitAllocations(field(row, 'allocations'), Number(field(row, 'marks')))
   }));
   draft.paper.total_marks = draft.paper.questions.reduce((sum, q) => sum + q.marks, 0);
   draft.paper.choice_groups = rows('review-choices').map(row => ({
@@ -185,7 +186,8 @@ async function compareRevisions() {
   if (!selectedHistoryAudit) { byId('history-error').textContent = 'Choose an audit first.'; return; }
   try {
     const comparison = await apiJson(`/api/history/${encodeURIComponent(selectedHistoryAudit)}/compare?before=${Number(byId('compare-before').value)}&after=${Number(byId('compare-after').value)}`);
-    const changes = comparison.questions.map(q => `<tr><td>${escapeHtml(q.question_id)}</td><td>${escapeHtml(q.kind)}</td><td>${q.fields ? Object.entries(q.fields).map(([key, value]) => `${escapeHtml(key)}: ${escapeHtml(value.before)} → ${escapeHtml(value.after)}`).join('<br>') : escapeHtml((q.after || q.before).question_text)}</td></tr>`).join('');
+    const readable = value => typeof value === 'object' && value !== null ? allocationText(value) : String(value ?? '—');
+    const changes = comparison.questions.map(q => `<tr><td>${escapeHtml(q.question_id)}</td><td>${escapeHtml(q.kind)}</td><td>${q.fields ? Object.entries(q.fields).map(([key, value]) => `${escapeHtml(key)}: ${escapeHtml(readable(value.before))} → ${escapeHtml(readable(value.after))}`).join('<br>') : escapeHtml((q.after || q.before).question_text)}</td></tr>`).join('');
     byId('history-comparison').innerHTML = `<h3>Revision ${comparison.before} → ${comparison.after}</h3><p>Score change: ${comparison.score_delta > 0 ? '+' : ''}${comparison.score_delta}. Rules changed: ${comparison.rules_changed ? 'yes' : 'no'}. Choices changed: ${comparison.choices_changed ? 'yes' : 'no'}. Syllabus changed: ${comparison.syllabus_changed ? 'yes' : 'no'}.</p><p>Component changes: ${escapeHtml(Object.entries(comparison.component_deltas).map(([key, delta]) => `${key.replaceAll('_', ' ')}: ${delta}`).join('; '))}</p><table class="comparison-table"><thead><tr><th>Question</th><th>Change</th><th>Details</th></tr></thead><tbody>${changes || '<tr><td colspan="3">No question changes.</td></tr>'}</tbody></table><p>Resolved: ${escapeHtml(comparison.resolved_findings.join('; ') || 'None')}</p><p>New: ${escapeHtml(comparison.new_findings.join('; ') || 'None')}</p><p>Updated findings: ${escapeHtml(comparison.changed_findings.join('; ') || 'None')}</p>`;
   } catch (error) { byId('history-error').textContent = error.message; }
 }
@@ -198,6 +200,8 @@ function editExample(example) {
   byId('eval-reviewer').value = example.reviewer || '';
   byId('eval-count').value = example.expected_question_count;
   byId('eval-marks').value = example.expected_printed_marks;
+  byId('eval-attempt-marks').value = example.expected_attempt_marks ?? '';
+  byId('eval-choices').value = example.expected_choice_groups ?? '';
   byId('eval-syllabus').value = example.syllabus_text;
   byId('eval-paper').value = example.paper_text;
   byId('evaluation-labels').replaceChildren();
@@ -217,6 +221,8 @@ async function saveExample() {
     example_id: byId('eval-id').value.trim(), reviewer: byId('eval-reviewer').value.trim(),
     syllabus_text: byId('eval-syllabus').value, paper_text: byId('eval-paper').value,
     expected_question_count: Number(byId('eval-count').value), expected_printed_marks: Number(byId('eval-marks').value),
+    expected_attempt_marks: byId('eval-attempt-marks').value === '' ? null : Number(byId('eval-attempt-marks').value),
+    expected_choice_groups: byId('eval-choices').value === '' ? null : Number(byId('eval-choices').value),
     labels: rows('evaluation-labels').map(row => ({ question_id: field(row, 'id').trim(), expected_unit: field(row, 'unit') === '' ? null : Number(field(row, 'unit')), expected_blooms: field(row, 'blooms'), expected_out_of_syllabus: field(row, 'oos') === 'true' }))
   };
   try {
@@ -228,7 +234,7 @@ async function saveExample() {
 async function runEvaluation(includeDrafts = false) {
   try {
     const result = await apiJson(`/api/evaluation/run?include_drafts=${includeDrafts}`);
-    const metrics = ['question_count_accuracy', 'printed_marks_accuracy', 'unit_accuracy', 'blooms_accuracy', 'out_of_syllabus_precision', 'out_of_syllabus_recall'];
+    const metrics = ['question_count_accuracy', 'printed_marks_accuracy', 'attempt_marks_accuracy', 'choice_group_count_accuracy', 'unit_accuracy', 'blooms_accuracy', 'out_of_syllabus_precision', 'out_of_syllabus_recall'];
     byId('evaluation-results').innerHTML = `<h3>${escapeHtml(result.mode)}</h3><p>${result.examples_evaluated} examples evaluated, ${result.examples_skipped} skipped. ${includeDrafts ? 'Draft checks do not establish faculty-validated accuracy.' : 'Only explicitly attributed reviews are included.'}</p><table class="comparison-table"><tbody>${metrics.map(key => `<tr><th>${escapeHtml(key.replaceAll('_', ' '))}</th><td>${result[key] === null ? 'No eligible data' : `${(result[key] * 100).toFixed(1)}%`}</td></tr>`).join('')}</tbody></table><details><summary>Inspect reference vs actual labels</summary><pre>${escapeHtml(JSON.stringify(result.details, null, 2))}</pre></details>`;
   } catch (error) { byId('evaluation-error').textContent = error.message; }
 }
@@ -239,7 +245,40 @@ function exportExamples() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function updateServiceStatus() {
+  try {
+    const [ai, capabilities] = await Promise.all([apiJson('/api/ai/status'), apiJson('/api/capabilities')]);
+    const aiText = ai.state === 'configured_unverified' ? `Gemini model ${ai.configured_model} configured (connectivity unverified; ${ai.request_timeout_seconds}s timeout)` : `AI templates active: ${(ai.fallback_reason || 'provider unavailable').replaceAll('_', ' ')}`;
+    const ocr = capabilities.ocr;
+    byId('service-status').textContent = `${aiText}. Local OCR: ${ocr.enabled && ocr.available ? 'ready' : ocr.enabled ? 'missing Tesseract or Poppler' : 'disabled'}.`;
+  } catch (error) { byId('service-status').textContent = `Service status unavailable: ${error.message}`; }
+}
+
+async function exportBackup() {
+  try {
+    const response = await fetch('/api/backups/export');
+    if (!response.ok) throw new Error('Could not export saved data.');
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url; link.download = 'examlens-backup.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    byId('backup-status').textContent = 'Exported saved audit history and locally edited evaluation examples. Unsaved dashboard changes are not included.';
+  } catch (error) { byId('backup-status').textContent = error.message; }
+}
+
+async function restoreBackup(file) {
+  if (!file) return;
+  byId('btn-restore-backup').disabled = true;
+  try {
+    const body = new FormData(); body.append('file', file);
+    const result = await apiJson('/api/backups/restore', { method: 'POST', body });
+    byId('backup-status').textContent = `${result.message} ${result.audits_restored} audits, ${result.revisions_restored} revisions, ${result.examples_restored} examples. Open Audit history to inspect them.`;
+  } catch (error) { byId('backup-status').textContent = `Restore failed: ${error.message}`; }
+  finally { byId('btn-restore-backup').disabled = false; byId('backup-file').value = ''; }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  updateServiceStatus();
   // Keep dialogs outside the main content's stacking context so the sticky
   // navigation cannot cover their headings or close buttons.
   document.querySelectorAll('.modal-backdrop, .loading-overlay').forEach(dialog => document.body.append(dialog));
@@ -257,7 +296,8 @@ document.addEventListener('DOMContentLoaded', () => {
     openReviewDraft({ syllabus: currentSyllabus, pyqs: currentPyqs, rules: currentAuditReport.rules,
       paper: { paper_title: currentAuditReport.paper_summary.paper_title, course_code: currentSyllabus.course_code,
         total_marks: currentAuditReport.paper_summary.printed_marks, questions: currentAuditReport.mapped_questions,
-        choice_groups: currentAuditReport.choice_groups || [] }, warnings: [], source_texts: {} });
+        choice_groups: currentAuditReport.choice_groups || [] }, warnings: currentAuditReport.document_warnings || [],
+        extraction_details: currentAuditReport.extraction_details || {}, source_texts: {} });
   });
   byId('btn-add-unit').addEventListener('click', () => addUnit());
   byId('btn-add-question').addEventListener('click', () => addQuestion());
@@ -267,6 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
   byId('btn-save-revision').addEventListener('click', () => saveAudit());
   byId('btn-save-copy').addEventListener('click', () => saveAudit(true));
   byId('btn-open-history').addEventListener('click', openHistory);
+  byId('btn-export-backup').addEventListener('click', exportBackup);
+  byId('btn-restore-backup').addEventListener('click', () => byId('backup-file').click());
+  byId('backup-file').addEventListener('change', event => restoreBackup(event.target.files[0]));
   byId('btn-compare-revisions').addEventListener('click', compareRevisions);
   byId('btn-open-evaluation').addEventListener('click', openEvaluation);
   byId('evaluation-example').addEventListener('change', event => editExample(evaluationExamples[Number(event.target.value)]));

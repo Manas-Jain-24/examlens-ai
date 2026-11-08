@@ -122,3 +122,18 @@ test('saving uses current report, revision base, and revision note', async () =>
   assert.equal(vm.runInContext('lastPayload.note', ctx), 'Corrected OR choices');
   assert.equal(vm.runInContext('savedAudit.revision', ctx), 3);
 });
+
+test('multi-unit editor validates totals, duplicates, and numeric syntax', () => {
+  const { ctx } = dashboard();
+  assert.equal(vm.runInContext("allocationText(parseUnitAllocations('1:4, 2:6', 10))", ctx), '1:4, 2:6');
+  for (const text of ['1:4, 2:5', '1:4, 1:6', '0:10', '1:-10', '1:NaN']) {
+    assert.throws(() => vm.runInContext(`parseUnitAllocations(${JSON.stringify(text)}, 10)`, ctx));
+  }
+});
+
+test('AI output labels expose actual model or template fallback', () => {
+  const { ctx } = dashboard();
+  assert.equal(vm.runInContext("engineLabel({is_ai_generated:true,model_name:'selected-model'})", ctx), 'Gemini: selected-model');
+  assert.ok(vm.runInContext("engineLabel({is_ai_generated:false,fallback_reason:'provider_timeout'})", ctx).includes('provider timeout'));
+  assert.ok(vm.runInContext("engineLabel({is_ai_generated:false,fallback_reason:'no_api_key'})", ctx).includes('faculty review required'));
+});

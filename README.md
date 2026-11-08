@@ -1,6 +1,10 @@
 # 📝 ExamLens AI: Examination Quality & Syllabus-Alignment Auditor
 ### *Semantic Assessment Auditing, Bloom's Taxonomy Cognitive Mapping & Question Paper Moderation*
 
+Version **1.2.0** adds supervised multi-unit mark splits, portable backup/restore,
+optional local OCR, and explicit AI provider/fallback diagnostics. See
+[operations and recovery](docs/OPERATIONS.md) and [release notes](CHANGELOG.md).
+
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![NLP](https://img.shields.io/badge/NLP-TF--IDF_%2B_Cosine_Similarity-FF6F00?style=for-the-badge)](backend/engine/semantic_mapper.py)
@@ -120,8 +124,8 @@ Project_2/
 Copy `.env.example` to `.env` for local configuration. The dashboard is served by
 the API, so no separate frontend server is needed. `CORS_ORIGINS` is a
 comma-separated list of permitted browser origins; set your frontend URL when
-deploying. Uploads accept PDF and UTF-8 `.txt` files. Scanned PDFs require OCR
-before upload.
+deploying. Uploads accept PDF and UTF-8 `.txt` files. Scanned PDFs can use optional
+local OCR when Tesseract and Poppler are installed and `OCR_ENABLED=true`.
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -161,7 +165,7 @@ questions.
    and resolved/new/updated findings. Old revisions cannot be overwritten; saving
    from a stale revision returns a conflict. Use **Save as new audit** for a copy.
 6. **Evaluate accuracy** manages reference examples and their reviewer attribution.
-   Three initial examples are explicitly unreviewed drafts. Run a draft smoke
+   Six initial examples (14 labels) are explicitly unreviewed drafts. Run a draft smoke
    check to exercise the pipeline, or evaluate only reviewed examples. With no
    reviewed examples, reviewed accuracy is shown as unavailable. Export the
    dataset for offline use:
@@ -180,6 +184,26 @@ version locally or behind an authenticated service.
 See [scoring and choice accounting](docs/SCORING.md) and
 [evaluation methodology](docs/EVALUATION.md) for definitions and limitations.
 
+### Multi-unit questions, backups, and provider setup
+
+- In document review or the question's faculty-review panel, enter `1:4, 2:6`
+  to allocate a 10-mark question across Units 1 and 2. Splits must total the
+  question marks and reference real units. Blank means all marks go to the selected
+  primary unit. Explicit allocations affect expected and guaranteed coverage,
+  including optional questions, without counting the full question twice.
+- **Export saved data** downloads all saved audits and revisions, their rules and
+  notes, and locally edited evaluation examples. **Restore backup as copies**
+  validates the entire bundle and imports atomically under new IDs. Original
+  history is preserved. Save current dashboard edits before exporting.
+- Set both `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env` for live suggestions.
+  Use a model available to your account. `AI_TIMEOUT_SECONDS` defaults to 20,
+  with SDK retries disabled. The UI distinguishes model-generated output from
+  templates and reports why a fallback occurred; configured status does not
+  claim that connectivity was verified.
+- OCR is local and off by default. `OCR_LANGUAGE`, `OCR_TIMEOUT_SECONDS`,
+  `MAX_PDF_PAGES`, `TESSERACT_CMD`, and `PDF_RENDERER_CMD` control it. The review
+  screen discloses OCR and sparse-page warnings, retained in saved reports.
+
 ## Current limitations
 
 This is a prototype for faculty review. TF-IDF mapping, verb-based Bloom labels,
@@ -187,9 +211,11 @@ and the scoring defaults have not been validated as an institutional quality
 standard. Similarity scores are heuristic values, not calibrated probabilities.
 Reports and AI summaries do not certify NBA, NAAC, or ABET compliance.
 
-The optional Gemini service uses `GEMINI_API_KEY`; without a key it returns
-template-based suggestions. Live provider calls are not covered by the offline
-tests. Parsing is best suited to structured English text. Scans require OCR;
+The optional Gemini service requires a key and selected model; otherwise it returns
+template-based suggestions. Live provider behavior is tested with stubs, without
+paid calls. Local OCR integration runs in CI; on machines without the tools that
+integration test is skipped. Parsing is best suited to structured English text.
+OCR may misread content and only runs on pages with little selectable text;
 complex layouts, unnumbered subparts, and nested choices require manual correction.
 The choice model supports disjoint groups, not arbitrary nested examination rules.
 There is no login or multi-user access control yet. Initial evaluation samples

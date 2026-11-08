@@ -66,7 +66,7 @@ def compare(audit_id: str, before: int, after: int):
         new = load_report(connection, audit_id, after)['report']
     old_q = {q['question_id']: q for q in old['mapped_questions']}
     new_q = {q['question_id']: q for q in new['mapped_questions']}
-    fields = ['question_text', 'marks', 'mapped_unit', 'blooms_level', 'is_out_of_syllabus', 'review_status', 'review_note']
+    fields = ['question_text', 'marks', 'mapped_unit', 'unit_allocations', 'blooms_level', 'is_out_of_syllabus', 'review_status', 'review_note']
     changes = []
     for qid in sorted(old_q.keys() | new_q.keys()):
         a, b = old_q.get(qid), new_q.get(qid)

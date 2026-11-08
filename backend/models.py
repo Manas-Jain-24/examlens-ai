@@ -67,6 +67,7 @@ class QuestionItem(BaseModel):
     question_type: Optional[str] = "Descriptive"
     command_verb: Optional[str] = None
     mapped_unit: Optional[int] = None
+    unit_allocations: Dict[int, float] = Field(default_factory=dict)
     mapped_outcomes: List[str] = Field(default_factory=list)
     blooms_level: Optional[Literal['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create']] = None
     mapping_confidence: float = 0.0
@@ -74,6 +75,15 @@ class QuestionItem(BaseModel):
     out_of_syllabus_reason: Optional[str] = None
     pyq_similarity: Optional[float] = None
     pyq_matched_question: Optional[str] = None
+
+    @model_validator(mode='after')
+    def valid_allocations(self):
+        if self.unit_allocations and (
+            any(unit < 1 or marks <= 0 for unit, marks in self.unit_allocations.items())
+            or abs(sum(self.unit_allocations.values()) - self.marks) > 0.001
+        ):
+            raise ValueError('Unit allocations must be positive and sum to the question marks.')
+        return self
 
 class QuestionPaper(BaseModel):
     paper_title: str
@@ -99,6 +109,7 @@ class QuestionPaper(BaseModel):
         return self
 
 class ReviewedDraft(BaseModel):
+    extraction_details: Dict[str, Any] = Field(default_factory=dict)
     syllabus: Syllabus
     paper: QuestionPaper
     pyqs: List['PreviousYearQuestion'] = Field(default_factory=list)
@@ -113,6 +124,9 @@ class ReviewedDraft(BaseModel):
             raise ValueError('Provide at least one syllabus unit and use distinct unit numbers.')
         if self.rules.unit_weights and set(self.rules.unit_weights) != set(numbers):
             raise ValueError('Unit weights must include exactly the syllabus unit numbers.')
+        for question in self.paper.questions:
+            if not set(question.unit_allocations) <= set(numbers):
+                raise ValueError(f'{question.question_id}: allocated units must exist in the syllabus.')
         return self
 
 class PreviousYearQuestion(BaseModel):
@@ -159,6 +173,8 @@ class ScoreBreakdown(BaseModel):
     repetition_risk_score: float    # 0-100 (weight: 10%)
 
 class AuditReport(BaseModel):
+    extraction_details: Dict[str, Any] = Field(default_factory=dict)
+    document_warnings: List[str] = Field(default_factory=list)
     rules: AuditRules = Field(default_factory=AuditRules)
     choice_groups: List[ChoiceGroup] = Field(default_factory=list)
     syllabus: Optional[Syllabus] = None
@@ -175,6 +191,8 @@ class AuditReport(BaseModel):
     mapped_questions: List[QuestionItem]
 
 class RecalculateRequest(BaseModel):
+    extraction_details: Dict[str, Any] = Field(default_factory=dict)
+    document_warnings: List[str] = Field(default_factory=list)
     rules: AuditRules = Field(default_factory=AuditRules)
     choice_groups: List[ChoiceGroup] = Field(default_factory=list)
     changed_question_ids: List[str] = Field(default_factory=list)
@@ -195,14 +213,20 @@ class HealthResponse(BaseModel):
 class AIRewriteRequest(BaseModel):
     question_text: str
     current_blooms_level: Optional[str] = "Understand"
-    target_blooms_level: Optional[str] = "Apply"
+    target_blooms_level: Literal['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'] = 'Apply'
     issue_reason: Optional[str] = None
     syllabus_context: Optional[str] = None
-    marks: Optional[float] = 10.0
+    marks: float = Field(default=10, gt=0, allow_inf_nan=False)
 
-class AIRewriteResponse(BaseModel):
+class EngineMetadata(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    engine: str = 'heuristic'
+    model_name: Optional[str] = None
+    fallback_reason: Optional[str] = None
+
+class AIRewriteResponse(EngineMetadata):
     original_question: str
-    rewritten_question: str
+    rewritten_question: str = Field(min_length=1)
     target_blooms_level: str
     command_verb: str
     mapped_unit: Optional[int] = None
@@ -210,10 +234,10 @@ class AIRewriteResponse(BaseModel):
     is_ai_generated: bool = True
 
 class CandidateQuestion(BaseModel):
-    question_text: str
+    question_text: str = Field(min_length=1)
     command_verb: str
-    blooms_level: str
-    marks: float
+    blooms_level: Literal['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create']
+    marks: float = Field(gt=0, allow_inf_nan=False)
     sample_solution_outline: Optional[str] = None
 
 class AIGenerateQuestionRequest(BaseModel):
@@ -222,11 +246,11 @@ class AIGenerateQuestionRequest(BaseModel):
     unit_number: int
     unit_title: str
     unit_topics: List[str]
-    target_blooms_level: Optional[str] = "Apply"
-    marks: float = 10.0
+    target_blooms_level: Literal['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'] = 'Apply'
+    marks: float = Field(default=10, gt=0, allow_inf_nan=False)
     difficulty: Optional[str] = "Medium"
 
-class AIGenerateQuestionResponse(BaseModel):
+class AIGenerateQuestionResponse(EngineMetadata):
     unit_number: int
     unit_title: str
     candidates: List[CandidateQuestion]
@@ -235,7 +259,7 @@ class AIGenerateQuestionResponse(BaseModel):
 class AIModerationSummaryRequest(BaseModel):
     report: AuditReport
 
-class AIModerationSummaryResponse(BaseModel):
+class AIModerationSummaryResponse(EngineMetadata):
     accreditation_summary: str
     key_strengths: List[str]
     urgent_action_items: List[str]

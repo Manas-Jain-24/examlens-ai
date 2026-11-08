@@ -1,7 +1,8 @@
 # Evaluation examples and accuracy
 
-The bundled `backend/data/evaluation_drafts.json` contains three synthetic draft
-cases, six question labels, and no attributed faculty reviews. They test parsing,
+The bundled `backend/data/evaluation_drafts.json` and
+`backend/data/evaluation_challenge_drafts.json` contain six synthetic draft
+cases, 14 question labels, and no attributed faculty reviews. They test parsing,
 mapping, optional question extraction, and outside-syllabus behavior. They are
 small smoke checks, not representative benchmarks.
 
@@ -21,6 +22,10 @@ Metrics:
 
 - Question-count accuracy: fraction of examples with exactly the expected count.
 - Printed-marks accuracy: fraction whose extracted marks sum matches the reference.
+- Attempt-marks accuracy: fraction with matching expected attempt marks, among
+  examples where this optional reference is supplied.
+- Choice-group-count accuracy: fraction with the expected number of optional
+  groups, among examples where this optional reference is supplied.
 - Unit accuracy: correct unit assignments / labels with an expected unit.
   Null expected units are excluded, typically for outside-syllabus questions.
 - Bloom accuracy: correct levels / all reference labels; missing questions fail.

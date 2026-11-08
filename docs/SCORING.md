@@ -1,8 +1,20 @@
-# Scoring and optional questions
+# Scoring, optional questions, and multi-unit marks
 
 Scoring version 2.0 keeps the six components and default weights (25/20/20/15/10/10)
 while allowing course-specific weights, unit targets, Bloom targets, and repetition
 thresholds. Saving a revision preserves the selected rules with the result.
+Version 2.1 additionally supports supervised multi-unit mark allocations.
+
+## Multi-unit questions
+
+`unit_allocations: {1: 4, 2: 6}` splits a 10-mark question across two units.
+Values must be positive, reference existing units, and total the question marks.
+An empty allocation assigns all marks to the selected primary unit, preserving
+older saved reports. Allocations affect unit marks and guaranteed/possible bounds;
+the question's cognitive distribution and paper total still count it only once.
+They are faculty-provided splits, not automatically inferred evidence. Assigning
+marks does not invent additional learning-outcome matches. Rewriting a question
+clears stale splits before re-analysis. Revisions and backups retain allocations.
 
 ## Choice groups
 

@@ -18,6 +18,31 @@ function escapeHtml(value) {
     .replace(/'/g, '&#039;');
 }
 
+function parseUnitAllocations(text, marks) {
+  if (!text.trim()) return {};
+  const allocations = {};
+  for (const part of text.split(',')) {
+    const match = part.trim().match(/^([1-9]\d*)\s*:\s*(\d+(?:\.\d+)?)$/);
+    if (!match || Number(match[2]) <= 0 || Object.hasOwn(allocations, match[1])) {
+      throw new Error('Use distinct unit:marks pairs, e.g. 1:4, 2:6. Marks must be positive.');
+    }
+    allocations[match[1]] = Number(match[2]);
+  }
+  if (Math.abs(Object.values(allocations).reduce((sum, value) => sum + value, 0) - marks) > 0.001) {
+    throw new Error('Unit mark allocations must add up to the question marks.');
+  }
+  return allocations;
+}
+
+function allocationText(allocations = {}) {
+  return Object.entries(allocations).map(([unit, marks]) => `${unit}:${marks}`).join(', ');
+}
+
+function engineLabel(data) {
+  return data.is_ai_generated ? `Gemini: ${data.model_name || 'configured model'}`
+    : `Template suggestion · ${(data.fallback_reason || 'provider unavailable').replaceAll('_', ' ')} · faculty review required`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   loadDemoAudit();
@@ -176,6 +201,7 @@ function collectTableOverrides() {
     return {
       ...q,
       mapped_unit: parseInt(row.querySelector('.select-unit').value, 10),
+      unit_allocations: row.querySelector('.review-allocations') ? parseUnitAllocations(row.querySelector('.review-allocations').value, q.marks) : q.unit_allocations || {},
       blooms_level: row.querySelector('.select-blooms').value,
       review_status: row.querySelector('.review-status')?.value || q.review_status || 'pending',
       review_note: row.querySelector('.review-note')?.value ?? q.review_note ?? '',
@@ -186,11 +212,11 @@ function collectTableOverrides() {
 
 async function recalculateFromTable(readTable = true) {
   if (!currentAuditReport || !currentSyllabus) return;
-  if (readTable) collectTableOverrides();
 
   showLoading('Recalculating Exam Quality Score & Unit Coverage with faculty overrides...');
 
   try {
+    if (readTable) collectTableOverrides();
     const payload = {
       syllabus: currentSyllabus,
       questions: currentAuditReport.mapped_questions,
@@ -198,6 +224,8 @@ async function recalculateFromTable(readTable = true) {
       pyqs: currentPyqs,
       rules: currentAuditReport.rules,
       choice_groups: currentAuditReport.choice_groups || [],
+      extraction_details: currentAuditReport.extraction_details || {},
+      document_warnings: currentAuditReport.document_warnings || [],
       paper_title: currentAuditReport.paper_summary.paper_title
     };
 
@@ -564,6 +592,8 @@ function renderQuestionsTable(questions, unitCoverage) {
             <label>Faculty decision <select class="review-status">${['pending', 'accepted', 'corrected', 'rejected'].map(status => `<option ${status === (q.review_status || 'pending') ? 'selected' : ''}>${status}</option>`).join('')}</select></label>
             <label><input type="checkbox" class="review-oos" ${q.is_out_of_syllabus ? 'checked' : ''}> Out of syllabus</label>
             <label>Review reason <input class="review-note" value="${escapeHtml(q.review_note || '')}" placeholder="Explain a correction or rejection"></label>
+            <label>Marks across units <input class="review-allocations" value="${escapeHtml(allocationText(q.unit_allocations))}" placeholder="e.g. 1:4, 2:6"></label>
+            <small>Blank assigns all marks to the selected unit. Explicit splits must total ${q.marks} marks.</small>
             <small>Use the unit/Bloom controls to correct the mapping; rejection records your decision but does not remove the question.</small>
           </details>
         </td>
@@ -696,7 +726,7 @@ async function runAIRewrite() {
 
     document.getElementById('rewrite-result-text').value = data.rewritten_question;
     document.getElementById('rewrite-rationale-text').textContent = data.pedagogical_rationale;
-    document.getElementById('rewrite-engine-badge').textContent = data.is_ai_generated ? 'Gemini 3.8 Flash' : 'Smart Heuristic Engine';
+    document.getElementById('rewrite-engine-badge').textContent = engineLabel(data);
 
     document.getElementById('ai-rewrite-output-container').classList.remove('hidden');
   } catch (err) {
@@ -717,7 +747,7 @@ async function applyAIRewrite() {
     return;
   }
 
-  collectTableOverrides();
+  try { collectTableOverrides(); } catch (error) { alert(error.message); return; }
   // The server will audit the new text before assigning fresh annotations.
   const q = currentAuditReport.mapped_questions[activeRewriteIndex];
   q.question_text = newText;
@@ -775,6 +805,7 @@ async function runAIGenerateQuestions() {
     if (!res.ok) throw new Error('Question generation failed');
     const data = await res.json();
     generatedCandidates = data.candidates || [];
+    document.getElementById('generation-engine-status').textContent = engineLabel(data);
 
     const container = document.getElementById('gen-candidates-container');
     container.innerHTML = generatedCandidates.map((c, i) => `
@@ -806,7 +837,7 @@ async function addGeneratedQuestionToPaper(candIndex) {
   if (!activeGenerateUnit || !generatedCandidates[candIndex]) return;
   const candidate = generatedCandidates[candIndex];
 
-  collectTableOverrides();
+  try { collectTableOverrides(); } catch (error) { alert(error.message); return; }
   const usedIds = new Set(currentAuditReport.mapped_questions.map(q => q.question_id));
   let nextId = currentAuditReport.mapped_questions.length + 1;
   while (usedIds.has(`Q${nextId}`)) nextId++;
@@ -856,6 +887,7 @@ async function openAIModerationSummary() {
     const data = await res.json();
 
     document.getElementById('summary-readiness-badge').textContent = data.nba_abet_readiness;
+    document.getElementById('summary-engine-status').textContent = engineLabel(data);
     narrativeElem.textContent = data.accreditation_summary;
 
     const strengthsList = document.getElementById('summary-strengths-list');
